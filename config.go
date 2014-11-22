@@ -28,7 +28,11 @@ type Config struct {
 	currentSub  *Config
 }
 
-// New creates a new *Config and returns it as ConfigGetter
+// New creates a new *Config for the given app and version
+// An error is returned, if the app and the version do not not match
+// the following regular expressions:
+// app => NameRegExp
+// version => VersionRegexp
 func New(app string, version string) (*Config, error) {
 
 	if err := ValidateName(app); err != nil {
@@ -51,7 +55,7 @@ func New(app string, version string) (*Config, error) {
 	return c, nil
 }
 
-// like New() but panics for invalid app names, version and options
+// MustNew calls New() and panics on errors
 func MustNew(app string, version string) *Config {
 	c, err := New(app, version)
 	if err != nil {
@@ -60,6 +64,7 @@ func MustNew(app string, version string) *Config {
 	return c
 }
 
+// MustSub calls Sub() and panics on errors
 func (c *Config) MustSub(name string) *Config {
 	s, err := c.Sub(name)
 	if err != nil {
@@ -68,6 +73,8 @@ func (c *Config) MustSub(name string) *Config {
 	return s
 }
 
+// Sub returns a *Config for a subcommand.
+// If name does not match to NameRegExp, an error is returned
 func (c *Config) Sub(name string) (*Config, error) {
 	if c.isSub() {
 		return nil, ErrSubSubCommand
@@ -79,16 +86,6 @@ func (c *Config) Sub(name string) (*Config, error) {
 
 	s.app = c.app + "_" + s.app
 	c.subcommands[name] = s
-
-	/*
-		for k, v := range c.spec {
-			s.spec[k] = v
-		}
-
-		for k, v := range c.shortflags {
-			s.shortflags[k] = v
-		}
-	*/
 
 	return s, nil
 }

@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	word_regexp     = regexp.MustCompile("^[a-z][a-z0-9]+$")
+	NameRegExp      = regexp.MustCompile("^[a-z][a-z0-9]+$")
 	VersionRegexp   = regexp.MustCompile("^[a-z0-9-.]+$")
 	ShortflagRegexp = regexp.MustCompile("^[a-z]$")
 )
@@ -37,12 +37,11 @@ func ValidateName(name string) error {
 	if name == "" {
 		return ErrInvalidName
 	}
-	for _, word := range strings.Split(name, "_") {
-		// fmt.Printf("%#v\n", word)
-		if !word_regexp.MatchString(word) {
-			return ErrInvalidName
-		}
+
+	if !NameRegExp.MatchString(name) {
+		return ErrInvalidName
 	}
+
 	return nil
 }
 
