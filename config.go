@@ -25,11 +25,6 @@ var (
 	ARGS        []string
 )
 
-// TODO change config file format to
-// - allow comments (lines starting with #)
-// - write help text in line above option (with type)
-// - separate options by an empty line
-
 const (
 	DateFormat     = "2006-01-02"
 	TimeFormat     = "15:04:05"
