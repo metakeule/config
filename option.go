@@ -2,85 +2,106 @@ package config
 
 import (
 	"encoding/json"
-	"strings"
 	"time"
 )
 
-// panics for invalid values
+// shortcut for MustNewOption of type bool
 func (c *Config) NewBool(name, helpText string, setter ...func(*Option)) *BoolGetter {
 	return &BoolGetter{
-		opt: c.mkOption(name, "bool", helpText, setter),
+		opt: c.MustNewOption(name, "bool", helpText, setter),
 		cfg: c,
 	}
 }
 
-// panics for invalid values
+// shortcut for MustNewOption of type int32
 func (c *Config) NewInt32(name, helpText string, setter ...func(*Option)) *Int32Getter {
 	return &Int32Getter{
-		opt: c.mkOption(name, "int32", helpText, setter),
+		opt: c.MustNewOption(name, "int32", helpText, setter),
 		cfg: c,
 	}
 }
 
-// panics for invalid values
+// shortcut for MustNewOption of type float32
 func (c *Config) NewFloat32(name, helpText string, setter ...func(*Option)) *Float32Getter {
 	return &Float32Getter{
-		opt: c.mkOption(name, "float32", helpText, setter),
+		opt: c.MustNewOption(name, "float32", helpText, setter),
 		cfg: c,
 	}
 }
 
-// panics for invalid values
+// shortcut for MustNewOption of type string
 func (c *Config) NewString(name, helpText string, setter ...func(*Option)) *StringGetter {
 	return &StringGetter{
-		opt: c.mkOption(name, "string", helpText, setter),
+		opt: c.MustNewOption(name, "string", helpText, setter),
 		cfg: c,
 	}
 }
 
-// panics for invalid values
+// shortcut for MustNewOption of type datetime
 func (c *Config) NewDateTime(name, helpText string, setter ...func(*Option)) *DateTimeGetter {
 	return &DateTimeGetter{
-		opt: c.mkOption(name, "datetime", helpText, setter),
+		opt: c.MustNewOption(name, "datetime", helpText, setter),
 		cfg: c,
 	}
 }
 
-// panics for invalid values
+func (c *Config) NewDate(name, helpText string, setter ...func(*Option)) *DateTimeGetter {
+	return &DateTimeGetter{
+		opt: c.MustNewOption(name, "date", helpText, setter),
+		cfg: c,
+	}
+}
+
+func (c *Config) NewTime(name, helpText string, setter ...func(*Option)) *DateTimeGetter {
+	return &DateTimeGetter{
+		opt: c.MustNewOption(name, "time", helpText, setter),
+		cfg: c,
+	}
+}
+
+// shortcut for MustNewOption of type json
 func (c *Config) NewJSON(name, helpText string, setter ...func(*Option)) *JSONGetter {
 	return &JSONGetter{
-		opt: c.mkOption(name, "json", helpText, setter),
+		opt: c.MustNewOption(name, "json", helpText, setter),
 		cfg: c,
 	}
 }
 
-// panics for invalid values
 func Required(o *Option) { o.Required = true }
 
-// panics for invalid values
 func Default(val interface{}) func(*Option) {
 	return func(o *Option) { o.Default = val }
 }
 
-// panics for invalid values
 func Shortflag(s rune) func(*Option) {
-	return func(o *Option) { o.Shortflag = strings.ToUpper(string(s)) }
+	return func(o *Option) { o.Shortflag = string(s) }
 }
 
 // panics for invalid values
-func (c *Config) mkOption(name, type_, helpText string, setter []func(*Option)) *Option {
-	o := &Option{Name: strings.ToUpper(name), Type: type_, Help: helpText}
+func (c *Config) MustNewOption(name, type_, helpText string, setter []func(*Option)) *Option {
+	o, err := c.NewOption(name, type_, helpText, setter)
+	if err != nil {
+		panic(err)
+	}
+	return o
+}
+
+// adds a new option
+func (c *Config) NewOption(name, type_, helpText string, setter []func(*Option)) (*Option, error) {
+	o := &Option{Name: name, Type: type_, Help: helpText}
 
 	for _, s := range setter {
 		s(o)
 	}
 
 	if err := o.Validate(); err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	c.addOption(o)
-	return o
+	if err := c.addOption(o); err != nil {
+		return nil, err
+	}
+	return o, nil
 }
 
 type Option struct {
@@ -114,7 +135,7 @@ type Option struct {
 func (c Option) ValidateDefault() error {
 	err := c.ValidateValue(c.Default)
 	if err != nil {
-		return ErrInvalidDefault
+		return InvalidDefault{c.Name, c.Type, c.Default}
 	}
 	return nil
 }
@@ -123,9 +144,10 @@ func (c Option) ValidateDefault() error {
 // If it does, nil is returned, otherwise
 // ErrInvalidValue is returned or a json unmarshalling error if the type is json
 func (c Option) ValidateValue(val interface{}) error {
+	invalidErr := InvalidValueError{c.Name, val}
 	// value may only be nil for optional Options
 	if val == nil && c.Required {
-		return ErrInvalidValue
+		return invalidErr
 	}
 
 	if val == nil {
@@ -134,19 +156,19 @@ func (c Option) ValidateValue(val interface{}) error {
 	switch ty := val.(type) {
 	case bool:
 		if c.Type != "bool" {
-			return ErrInvalidValue
+			return invalidErr
 		}
 	case int32:
 		if c.Type != "int32" {
-			return ErrInvalidValue
+			return invalidErr
 		}
 	case float32:
 		if c.Type != "float32" {
-			return ErrInvalidValue
+			return invalidErr
 		}
 	case string:
 		if c.Type != "string" && c.Type != "json" {
-			return ErrInvalidValue
+			return invalidErr
 		}
 		if c.Type == "json" {
 			var v interface{}
@@ -155,11 +177,16 @@ func (c Option) ValidateValue(val interface{}) error {
 			}
 		}
 	case time.Time:
-		if c.Type != "datetime" {
-			return ErrInvalidValue
+
+		switch c.Type {
+		case "date", "time", "datetime":
+			// ok
+		default:
+			return invalidErr
 		}
+
 	default:
-		return ErrInvalidValue
+		return invalidErr
 	}
 	return nil
 }
@@ -171,7 +198,7 @@ func (c Option) Validate() error {
 	if err := ValidateName(c.Name); err != nil {
 		return err
 	}
-	if err := ValidateType(c.Type); err != nil {
+	if err := ValidateType(c.Name, c.Type); err != nil {
 		return err
 	}
 	if err := c.ValidateDefault(); err != nil {

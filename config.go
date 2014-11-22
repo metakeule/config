@@ -21,31 +21,20 @@ var (
 	GLOBAL_DIRS string // colon separated list to look for
 	WORKING_DIR string
 	CONFIG_EXT  string
+	ENV         []string
+	ARGS        []string
 )
 
-// TODO always return the app version for invalid keys and values
-// TODO add subcommands
-// TODO improve and streamline errors
+// TODO change config file format to
+// - allow comments (lines starting with #)
+// - write help text in line above option (with type)
+// - separate options by an empty line
 
-type ConfigGetter interface {
-	Load(helpIntro string)
-	IsSet(option string) bool
-	Locations(option string) []string
-	GetBool(option string) bool
-	GetFloat32(option string) float32
-	GetInt32(option string) int32
-	GetTime(option string) *time.Time
-	GetString(option string) string
-	GetJSON(option string, val interface{}) error
-}
-
-type ConfigSetter interface {
-	SetGlobalOptions(opts map[string]string) error
-	SetUserOptions(opts map[string]string) error
-	SetLocalOptions(opts map[string]string) error
-}
-
-var _ ConfigSetter = &Config{}
+const (
+	DateFormat     = "2006-01-02"
+	TimeFormat     = "15:04:05"
+	DateTimeFormat = "2006-01-02 15:04:05"
+)
 
 type Config struct {
 	app       string
@@ -54,59 +43,99 @@ type Config struct {
 	values    map[string]interface{}
 	locations map[string][]string
 	// maps shortflag to option
-	shortflags map[string]string
+	shortflags  map[string]string
+	subcommands map[string]*Config
+	currentSub  *Config
 }
 
 // New creates a new *Config and returns it as ConfigGetter
-// It panics for invalid app names, version and options
-func New(app string, version string) *Config {
+func New(app string, version string) (*Config, error) {
 
-	if err := ValidateName(strings.ToUpper(app)); err != nil {
-		panic(ErrInvalidAppName(app))
+	if err := ValidateName(app); err != nil {
+		return nil, ErrInvalidAppName(app)
 	}
 
 	if err := ValidateVersion(version); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	c := &Config{
-		spec:       map[string]*Option{},
-		app:        app,
-		version:    version,
-		shortflags: map[string]string{},
+		spec:        map[string]*Option{},
+		subcommands: map[string]*Config{},
+		app:         app,
+		version:     version,
+		shortflags:  map[string]string{},
 	}
 
 	c.Reset()
-	/*
-		for _, opt := range options {
-			c.addOption(opt)
-		}
-	*/
+	return c, nil
+}
 
+// like New() but panics for invalid app names, version and options
+func MustNew(app string, version string) *Config {
+	c, err := New(app, version)
+	if err != nil {
+		panic(err)
+	}
 	return c
 }
 
-func (c *Config) addOption(opt *Option) {
+func (c *Config) MustSub(name string) *Config {
+	s, err := c.Sub(name)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+func (c *Config) Sub(name string) (*Config, error) {
+	if c.isSub() {
+		return nil, ErrSubSubCommand
+	}
+	s, err := New(name, c.version)
+	if err != nil {
+		return nil, err
+	}
+
+	s.app = c.app + "_" + s.app
+	c.subcommands[name] = s
+
+	/*
+		for k, v := range c.spec {
+			s.spec[k] = v
+		}
+
+		for k, v := range c.shortflags {
+			s.shortflags[k] = v
+		}
+	*/
+
+	return s, nil
+}
+
+func (c *Config) addOption(opt *Option) error {
 	if err := ValidateName(opt.Name); err != nil {
-		panic(ErrInvalidOptionName(opt.Name))
+		return ErrInvalidOptionName(opt.Name)
 	}
 
 	if _, has := c.spec[opt.Name]; has {
-		panic(ErrDoubleOption(opt.Name))
+		return ErrDoubleOption(opt.Name)
 	}
 	c.spec[opt.Name] = opt
 	if opt.Shortflag != "" {
 		if _, has := c.shortflags[opt.Shortflag]; has {
-			panic(ErrDoubleShortflag(opt.Shortflag))
+			return ErrDoubleShortflag(opt.Shortflag)
 		}
 		c.shortflags[opt.Shortflag] = opt.Name
 	}
+	return nil
 }
 
 // Reset cleans the values
 func (c *Config) Reset() {
 	c.values = map[string]interface{}{}
 	c.locations = map[string][]string{}
+	c.currentSub = nil
 }
 
 // Location returns the locations where the option was set in the order of setting.
@@ -118,21 +147,26 @@ func (c *Config) Reset() {
 // - cli args are tracked by their name
 // - settings via Set() are tracked by the given location or the caller if that is empty
 func (c *Config) Locations(option string) []string {
-	return c.locations[strings.ToUpper(option)]
+	if err := ValidateName(option); err != nil {
+		panic(ErrInvalidName)
+	}
+	return c.locations[option]
 }
 
 func (c *Config) set(key string, val string, location string) error {
-	key = strings.ToUpper(key)
+	if err := ValidateName(key); err != nil {
+		return ErrInvalidName
+	}
 	spec, has := c.spec[key]
 
 	if !has {
-		return ErrUnknownOption(key)
+		return UnknownOptionError{c.version, key}
 	}
 
 	out, err := stringToValue(spec.Type, val)
 
 	if err != nil {
-		return err
+		return InvalidValueError{key, val}
 	}
 
 	c.values[key] = out
@@ -166,14 +200,20 @@ func (c *Config) setMap(options map[string]string) error {
 }
 
 // IsSet returns true, if the given option is set and false if not.
-func (c Config) IsSet(key string) bool {
-	_, has := c.values[strings.ToUpper(key)]
+func (c Config) IsSet(option string) bool {
+	if err := ValidateName(option); err != nil {
+		panic(ErrInvalidName)
+	}
+	_, has := c.values[option]
 	return has
 }
 
 // GetBool returns the value of the option as bool
 func (c Config) GetBool(option string) bool {
-	v, has := c.values[strings.ToUpper(option)]
+	if err := ValidateName(option); err != nil {
+		panic(ErrInvalidName)
+	}
+	v, has := c.values[option]
 	if has {
 		return v.(bool)
 	}
@@ -182,7 +222,10 @@ func (c Config) GetBool(option string) bool {
 
 // GetFloat32 returns the value of the option as float32
 func (c Config) GetFloat32(option string) float32 {
-	v, has := c.values[strings.ToUpper(option)]
+	if err := ValidateName(option); err != nil {
+		panic(ErrInvalidName)
+	}
+	v, has := c.values[option]
 	if has {
 		return v.(float32)
 	}
@@ -191,7 +234,10 @@ func (c Config) GetFloat32(option string) float32 {
 
 // GetInt32 returns the value of the option as int32
 func (c Config) GetInt32(option string) int32 {
-	v, has := c.values[strings.ToUpper(option)]
+	if err := ValidateName(option); err != nil {
+		panic(ErrInvalidName)
+	}
+	v, has := c.values[option]
 	if has {
 		return v.(int32)
 	}
@@ -200,7 +246,10 @@ func (c Config) GetInt32(option string) int32 {
 
 // GetTime returns the value of the option as time
 func (c Config) GetTime(option string) *time.Time {
-	v, has := c.values[strings.ToUpper(option)]
+	if err := ValidateName(option); err != nil {
+		panic(ErrInvalidName)
+	}
+	v, has := c.values[option]
 	if has {
 		val := v.(time.Time)
 		return &val
@@ -210,7 +259,10 @@ func (c Config) GetTime(option string) *time.Time {
 
 // GetString returns the value of the option as string
 func (c Config) GetString(option string) string {
-	v, has := c.values[strings.ToUpper(option)]
+	if err := ValidateName(option); err != nil {
+		panic(ErrInvalidName)
+	}
+	v, has := c.values[option]
 	if has {
 		return v.(string)
 	}
@@ -219,11 +271,96 @@ func (c Config) GetString(option string) string {
 
 // GetJSON unmarshals the value of the option to val.
 func (c Config) GetJSON(option string, val interface{}) error {
-	v, has := c.values[strings.ToUpper(option)]
+	if err := ValidateName(option); err != nil {
+		panic(ErrInvalidName)
+	}
+	v, has := c.values[option]
 	if has {
 		return json.Unmarshal([]byte(v.(string)), val)
 	}
 	return nil
+}
+
+func (c *Config) writeConfigValues(file *os.File) (err error) {
+
+	for k, v := range c.values {
+		// do nothing for nil values
+		if v == nil {
+			continue
+		}
+
+		help := strings.Split(c.spec[k].Help, "\n")
+		helplines := []string{}
+
+		for _, h := range help {
+			helplines = append(helplines, strings.TrimSpace(h))
+		}
+
+		writeKey := k
+		if c.isSub() {
+			writeKey = c.subName() + "_" + k
+		}
+
+		_, err = file.WriteString("# ------ " + writeKey + " (" + c.spec[k].Type + ") ------\n# " + strings.Join(helplines, "\n# ") + "\n")
+		if err != nil {
+			return
+		}
+
+		_, err = file.WriteString(writeKey + "=")
+		if err != nil {
+			return
+		}
+
+		switch ty := v.(type) {
+		case bool:
+			_, err = file.WriteString(fmt.Sprintf("%v", ty))
+		case int32:
+			_, err = file.WriteString(fmt.Sprintf("%v", ty))
+		case float32:
+			_, err = file.WriteString(fmt.Sprintf("%v", ty))
+		case string:
+			_, err = file.WriteString(ty)
+		case time.Time:
+			var str string
+			switch c.spec[k].Type {
+			case "date":
+				str = ty.Format(DateFormat)
+			case "time":
+				str = ty.Format(TimeFormat)
+			case "datetime":
+				str = ty.Format(DateTimeFormat)
+			default:
+				return InvalidTypeError{k, c.spec[k].Type}
+				// return ErrInvalidType(c.spec[k].Type)
+			}
+			_, err = file.WriteString(str)
+		default:
+			var bt []byte
+			bt, err = json.Marshal(ty)
+			if err != nil {
+				return
+			}
+			_, err = file.Write(bt)
+		}
+
+		if err != nil {
+			return
+		}
+
+		_, err = file.Write(delim)
+		if err != nil {
+			return
+		}
+	}
+
+	for _, sub := range c.subcommands {
+		_, err = file.WriteString("#### " + sub.subName() + " ####\n")
+		if err != nil {
+			return
+		}
+		sub.writeConfigValues(file)
+	}
+	return
 }
 
 // WriteConfigFile writes the configuration values to the given file
@@ -231,6 +368,9 @@ func (c Config) GetJSON(option string, val interface{}) error {
 // if an error happens
 // the given perm is only used to create new files.
 func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
+	if c.isSub() {
+		return errors.New("WriteConfigFile must not be called in sub command")
+	}
 	if errValid := c.ValidateValues(); errValid != nil {
 		return errValid
 	}
@@ -275,61 +415,25 @@ func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
 		return
 	}
 
-	for k, v := range c.values {
-		// do nothing for nil values
-		if v == nil {
-			continue
-		}
-
-		_, err = file.WriteString(k + "=")
-		if err != nil {
-			return
-		}
-
-		switch ty := v.(type) {
-		case bool:
-			_, err = file.WriteString(fmt.Sprintf("%v", ty))
-		case int32:
-			_, err = file.WriteString(fmt.Sprintf("%v", ty))
-		case float32:
-			_, err = file.WriteString(fmt.Sprintf("%v", ty))
-		case string:
-			_, err = file.WriteString(ty)
-		case time.Time:
-			_, err = file.WriteString(ty.Format(time.RFC3339))
-		default:
-			var bt []byte
-			bt, err = json.Marshal(ty)
-			if err != nil {
-				return
-			}
-			_, err = file.Write(bt)
-		}
-
-		if err != nil {
-			return
-		}
-
-		_, err = file.Write(delim)
-		if err != nil {
-			return
-		}
-	}
-	return
+	return c.writeConfigValues(file)
 }
 
 func (c *Config) Merge(rd io.Reader, location string) error {
+	wrapErr := func(err error) error {
+		return InvalidConfigFileError{location, c.version, err}
+	}
+
 	sc := bufio.NewScanner(rd)
 	if !sc.Scan() {
-		return errors.New("can't read config header (app and version)")
+		return wrapErr(errors.New("can't read config header (app and version)"))
 	}
 	header := sc.Text()
 	words := strings.Split(header, " ")
 	if len(words) != 2 {
-		return errors.New("invalid config header")
+		return wrapErr(errors.New("invalid config header"))
 	}
-	if words[0] != c.app {
-		return fmt.Errorf("invalid config header: app is %#v but config is for app %#v", c.app, words[0])
+	if words[0] != c.appName() {
+		return wrapErr(fmt.Errorf("invalid config header: app is %#v but config is for app %#v", c.appName(), words[0]))
 	}
 
 	differentVersions := words[1] != c.version
@@ -342,7 +446,7 @@ func (c *Config) Merge(rd io.Reader, location string) error {
 		idx := bytes.Index(data, delim)
 		if idx == -1 {
 			// fmt.Printf("XX invalid data: %#v\n", string(data))
-			return 0, nil, errors.New("invalid data")
+			return 0, nil, wrapErr(fmt.Errorf("invalid data: %#v", string(data)))
 		}
 		return idx + len(delim), data[:idx], nil
 	})
@@ -358,40 +462,78 @@ func (c *Config) Merge(rd io.Reader, location string) error {
 			// return errors.New("empty pair")
 			continue
 		}
+
+		// ignore comments to the end of line
+		for strings.HasPrefix(pair, "#") {
+			idx := strings.Index(pair, "\n")
+			if idx == -1 || len(pair) < idx+1 {
+				return wrapErr(fmt.Errorf("comment must end with newline"))
+			}
+			pair = pair[idx+1:]
+		}
+		/*
+			if strings.HasPrefix(pair, "#") {
+
+			}
+		*/
 		// fmt.Printf("text: %#v\n", pair)
 		ass := strings.Index(pair, "=")
 		if ass == -1 {
-			return errors.New("missing =")
+			return wrapErr(fmt.Errorf("missing = in %#v", pair))
 		}
 		key, val := pair[:ass], pair[ass+1:]
+
+		underscPos := strings.Index(key, "_")
+
+		var err error
+		if underscPos == -1 {
+			err = c.set(key, val, location)
+		} else {
+			subName := key[:underscPos]
+			sub, has := c.subcommands[subName]
+			if !has {
+				// fmt.Printf("subcommands: %#v (app: %#v)\n", c.subcommands, c.app)
+				return errors.New("unknown subcommand " + subName)
+			} else {
+				err = sub.set(key[underscPos+1:], val, location)
+			}
+		}
+
 		// key = strings.TrimLeft(key, "\n")
-		err := c.set(key, val, location)
 		if err != nil {
 			if differentVersions {
-				return fmt.Errorf("value %#v of option %s, present in config for version %s is not valid for running version %s",
-					val, key, words[1], c.version)
+				return wrapErr(fmt.Errorf("value %#v of option %s, present in config for version %s is not valid for running version %s",
+					val, key, words[1], c.version))
 			} else {
-				return err
+				return wrapErr(err)
 			}
 		}
 	}
 	return nil
 }
 
+func init() {
+	ENV = os.Environ()
+	ARGS = os.Args[1:]
+}
+
 func (c *Config) MergeEnv() error {
 	prefix := strings.ToUpper(c.app) + "_CONFIG_"
 	// fmt.Printf("looking for prefix %#v\n", prefix)
-	for _, pair := range os.Environ() {
+	for _, pair := range ENV {
 		if strings.HasPrefix(pair, prefix) {
 			// fmt.Printf("Env: %#v\n", pair)
 			startKey := len(prefix) // strings.Index(pair, prefix)
-			startVal := strings.Index(pair, "=")
-			key, val := pair[startKey:startVal], pair[startVal+1:]
-			// fmt.Printf("key %#v val %#v\n", key, val)
-			err := c.set(key, val, pair[:startVal])
-			if err != nil {
-				return err
+			if startKey > 0 {
+				startVal := strings.Index(pair, "=")
+				key, val := pair[startKey:startVal], pair[startVal+1:]
+				// fmt.Printf("key %#v val %#v\n", key, val)
+				err := c.set(strings.ToLower(key), val, pair[:startVal])
+				if err != nil {
+					return InvalidConfigEnv{c.version, pair[:startVal], err}
+				}
 			}
+
 		}
 	}
 	return nil
@@ -407,14 +549,24 @@ func (c *Config) MergeEnv() error {
 // exiting the program. also if --config_spec is set the spec is directly written to the
 // StdOut and the program is exiting. If --help is set, the help message is printed with the
 // the help  messages for the config options. If --version is set, the version of the running app is returned
-func (c *Config) MergeArgs(helpIntro string) {
+func (c *Config) MergeArgs(helpIntro string) error {
+	_, err := c.mergeArgs(helpIntro, false, ARGS)
+	return err
+}
+
+func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) (merged map[string]bool, err error) {
+	merged = map[string]bool{}
 	// fmt.Printf("args: %#v\n", os.Args[1:])
-	for _, pair := range os.Args[1:] {
+	for _, pair := range args {
+		wrapErr := func(err error) error {
+			return InvalidConfigFlag{c.version, pair, err}
+		}
 		idx := strings.Index(pair, "=")
 		var key, val string
 		if idx != -1 {
 			if !(idx < len(pair)-1) {
-				err2Stderr(fmt.Errorf("invalid argument syntax at %#v\n", pair))
+				err = wrapErr(fmt.Errorf("invalid argument syntax at %#v\n", pair))
+				return
 			}
 			key, val = pair[:idx], pair[idx+1:]
 		} else {
@@ -424,19 +576,24 @@ func (c *Config) MergeArgs(helpIntro string) {
 
 		argKey := key
 		key = argToKey(argKey)
+		// fmt.Println(argKey)
 
 		switch key {
 		case "CONFIG_SPEC":
-			bt, err := c.MarshalJSON()
+			var bt []byte
+			bt, err = c.MarshalJSON()
 			if err != nil {
-				err2Stderr(fmt.Errorf("can't serialize config spec to json: %#v\n", err.Error()))
+				err = wrapErr(fmt.Errorf("can't serialize config spec to json: %#v\n", err.Error()))
+				return
 			}
 			fmt.Fprintf(os.Stdout, "%s\n", bt)
 			os.Exit(0)
 		case "CONFIG_LOCATIONS":
-			bt, err := json.Marshal(c.locations)
+			var bt []byte
+			bt, err = json.Marshal(c.locations)
 			if err != nil {
-				err2Stderr(fmt.Errorf("can't serialize config locations to json: %#v\n", err.Error()))
+				err = wrapErr(fmt.Errorf("can't serialize config locations to json: %#v\n", err.Error()))
+				return
 			}
 			fmt.Fprintf(os.Stdout, "%s\n", bt)
 			os.Exit(0)
@@ -450,9 +607,11 @@ func (c *Config) MergeArgs(helpIntro string) {
 				c.UserFile(),
 				c.LocalFile(),
 			}
-			bt, err := json.Marshal(cfgFiles)
+			var bt []byte
+			bt, err = json.Marshal(cfgFiles)
 			if err != nil {
-				err2Stderr(fmt.Errorf("can't serialize config files to json: %#v\n", err.Error()))
+				err = wrapErr(fmt.Errorf("can't serialize config files to json: %#v\n", err.Error()))
+				return
 			}
 			fmt.Fprintf(os.Stdout, "%s\n", bt)
 			os.Exit(0)
@@ -474,14 +633,26 @@ func (c *Config) MergeArgs(helpIntro string) {
 			if sh, has := c.shortflags[key]; has {
 				key = sh
 			}
-			err := c.set(key, val, argKey)
-			if err != nil {
-				err2Stderr(fmt.Errorf("invalid value for option %s: %s\n", key, err.Error()))
+
+			// fmt.Println(key)
+			_, has := c.spec[key]
+			if ignoreUnknown && !has {
+				continue
 			}
+			err = c.set(key, val, argKey)
+			if err != nil {
+				err = wrapErr(fmt.Errorf("invalid value for option %s: %s\n", key, err.Error()))
+				return
+			}
+			merged[argKey] = true
 		}
 	}
 
-	err2Stderr(c.CheckMissing())
+	if err = c.ValidateValues(); err != nil {
+		return
+	}
+	err = c.CheckMissing()
+	return
 }
 
 // CheckMissing checks if mandatory values are missing inside the values map
@@ -490,7 +661,7 @@ func (c *Config) CheckMissing() error {
 	for k, spec := range c.spec {
 		if spec.Required && spec.Default == nil {
 			if _, has := c.values[k]; !has {
-				return fmt.Errorf("missing config key/arg %s/%s", k, keyToArg(k))
+				return MissingOptionError{c.version, k}
 			}
 		}
 	}
@@ -507,10 +678,11 @@ func (c *Config) ValidateValues() error {
 		}
 		spec, has := c.spec[k]
 		if !has {
-			return errors.New("unkown config key " + k)
+			return UnknownOptionError{c.version, k}
+			// return errors.New("unkown config key " + k)
 		}
 		if err := spec.ValidateValue(v); err != nil {
-			return err
+			return InvalidConfig{c.version, err}
 		}
 	}
 	return nil
@@ -548,7 +720,7 @@ func (c *Config) LoadFile(path string) (err error, found bool) {
 // If no config file could be found, no error is returned.
 func (c *Config) LoadGlobals() error {
 	for _, dir := range strings.Split(GLOBAL_DIRS, ":") {
-		err, found := c.LoadFile(filepath.Join(dir, c.app, c.app+CONFIG_EXT))
+		err, found := c.LoadFile(filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT))
 		if found {
 			return err
 		}
@@ -611,7 +783,7 @@ func (c *Config) SaveToLocal() error {
 }
 
 func (c *Config) globalsFile(dir string) string {
-	return filepath.Join(dir, c.app, c.app+CONFIG_EXT)
+	return filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT)
 }
 
 // GlobalFile returns the path for the global config file in the first global directory
@@ -620,7 +792,7 @@ func (c *Config) FirstGlobalsFile() string {
 }
 
 func (c *Config) UserFile() string {
-	return filepath.Join(USER_DIR, c.app, c.app+CONFIG_EXT)
+	return filepath.Join(USER_DIR, c.appName(), c.appName()+CONFIG_EXT)
 }
 
 func (c *Config) LoadUser() error {
@@ -632,11 +804,12 @@ func (c *Config) LoadUser() error {
 }
 
 func (c *Config) LocalFile() string {
-	return filepath.Join(WORKING_DIR, ".config", c.app, c.app+CONFIG_EXT)
+	return filepath.Join(WORKING_DIR, ".config", c.appName(), c.appName()+CONFIG_EXT)
 }
 
 // LoadLocals merges config inside a .config subdir in the local directory
 func (c *Config) LoadLocals() error {
+	// fmt.Println("loading locals from " + c.LocalFile())
 	err, found := c.LoadFile(c.LocalFile())
 	if found {
 		return err
@@ -658,27 +831,112 @@ func (c *Config) LoadLocals() error {
 // exiting the program. also if --config_spec is set the spec is directly written to the
 // StdOut and the program is exiting. If --help is set, the help message is printed with the
 // the help  messages for the config options
-func (c *Config) Load(helpIntro string) {
+func (c *Config) Run(helpIntro string, validator func(*Config) error) {
+	err2Stderr(c.Load(helpIntro))
+	if validator != nil {
+		err2Stderr(validator(c))
+	}
+}
+
+// returns nil, if there is no current sub
+func (c *Config) CurrentSub() *Config {
+	return c.currentSub
+}
+
+func (c *Config) isSub() bool {
+	return !(strings.Index(c.app, "_") == -1)
+}
+
+func (c *Config) appName() string {
+	if c.isSub() {
+		return c.app[:strings.Index(c.app, "_")]
+	}
+	return c.app
+}
+
+func (c *Config) subName() string {
+	if c.isSub() {
+		return c.app[strings.Index(c.app, "_")+1:]
+	}
+	return ""
+}
+
+func (c *Config) Load(helpIntro string) error {
 	// clear old values
 	c.Reset()
+
+	// fmt.Printf("ARGS: %#v\n", ARGS)
 
 	// first load defaults
 	c.LoadDefaults()
 
 	// then overwrite with globals, return any error
-	err2Stderr(c.LoadGlobals())
+	if err := c.LoadGlobals(); err != nil {
+		return err
+	}
 
 	// then overwrite with user, return any error
-	err2Stderr(c.LoadUser())
+	if err := c.LoadUser(); err != nil {
+		return err
+	}
 
 	// then overwrite with locals, return any error
-	err2Stderr(c.LoadLocals())
+	if err := c.LoadLocals(); err != nil {
+		return err
+	}
 
 	// then overwrite with env, return any error
-	err2Stderr(c.MergeEnv())
+	if err := c.MergeEnv(); err != nil {
+		return err
+	}
+
+	if len(ARGS) > 0 {
+		// fmt.Println("we are in subcommand " + ARGS[0])
+		if sub, has := c.subcommands[strings.ToLower(ARGS[0])]; has {
+			// fmt.Println("we are in subcommand " + ARGS[0])
+			c.currentSub = sub
+			if len(ARGS) == 1 {
+				ARGS = []string{}
+			} else {
+				ARGS = ARGS[1:]
+			}
+
+			// then overwrite with env, return any error
+			if err := sub.MergeEnv(); err != nil {
+				return err
+			}
+
+			merged1, err1 := c.mergeArgs(helpIntro, true, ARGS)
+			if err1 != nil {
+				return err1
+			}
+
+			// then overwrite with args
+			merged2, err2 := sub.mergeArgs(helpIntro, true, ARGS)
+			if err2 != nil {
+				return err2
+			}
+
+			// fmt.Printf("merged1: %#v\nmerged2: %#v\n", merged1, merged2)
+
+			for _, arg := range ARGS {
+				key := arg
+				if idx := strings.Index(arg, "="); idx != -1 {
+					key = arg[:idx]
+				}
+
+				if !merged1[key] && !merged2[key] {
+					return UnknownOptionError{c.version, arg}
+				}
+			}
+			return nil
+
+			//return sub.Load(helpIntro)
+		}
+	}
 
 	// then overwrite with args
-	c.MergeArgs(helpIntro)
+	return c.MergeArgs(helpIntro)
 }
 
 func (c *Config) MarshalJSON() ([]byte, error) {

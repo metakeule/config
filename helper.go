@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	word_regexp     = regexp.MustCompile("^[A-Z][A-Z0-9]+$")
+	word_regexp     = regexp.MustCompile("^[a-z][a-z0-9]+$")
 	VersionRegexp   = regexp.MustCompile("^[a-z0-9-.]+$")
 	ShortflagRegexp = regexp.MustCompile("^[a-z]$")
 )
@@ -50,16 +50,18 @@ func ValidateVersion(version string) error {
 // ValidateType checks if the given type is valid.
 // If it does, nil is returned, otherwise
 // ErrInvalidType is returned
-func ValidateType(typ string) error {
+func ValidateType(option, typ string) error {
 	switch typ {
-	case "bool", "int32", "float32", "string", "datetime", "json":
+	case "bool", "int32", "float32", "string", "datetime", "date", "time", "json":
 		return nil
 	default:
-		return ErrInvalidType
+		return InvalidTypeError{option, typ}
 	}
 }
 
 var delim = []byte("\u220e\n")
+
+// var delim = []byte("\n\n")
 
 func stringToValue(typ string, in string) (out interface{}, err error) {
 	switch typ {
@@ -72,7 +74,11 @@ func stringToValue(typ string, in string) (out interface{}, err error) {
 		fl, e := strconv.ParseFloat(in, 32)
 		return float32(fl), e
 	case "datetime":
-		return time.Parse(time.RFC3339, in)
+		return time.Parse(DateTimeFormat, in)
+	case "date":
+		return time.Parse(DateFormat, in)
+	case "time":
+		return time.Parse(TimeFormat, in)
 	case "string":
 		return in, nil
 	case "json":
@@ -90,14 +96,12 @@ func stringToValue(typ string, in string) (out interface{}, err error) {
 
 func keyToArg(key string) string {
 	out := strings.Replace(key, "_", "-", -1)
-	out = strings.ToLower(out)
 	return "--" + out
 }
 
 func argToKey(arg string) string {
 	out := strings.TrimLeft(arg, "-")
 	out = strings.TrimLeft(out, "-")
-	out = strings.ToUpper(out)
 	return strings.Replace(out, "-", "_", -1)
 }
 
