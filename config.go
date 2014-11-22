@@ -16,21 +16,6 @@ import (
 	"time"
 )
 
-var (
-	USER_DIR    string
-	GLOBAL_DIRS string // colon separated list to look for
-	WORKING_DIR string
-	CONFIG_EXT  string
-	ENV         []string
-	ARGS        []string
-)
-
-const (
-	DateFormat     = "2006-01-02"
-	TimeFormat     = "15:04:05"
-	DateTimeFormat = "2006-01-02 15:04:05"
-)
-
 type Config struct {
 	app       string
 	version   string
@@ -505,11 +490,6 @@ func (c *Config) Merge(rd io.Reader, location string) error {
 		}
 	}
 	return nil
-}
-
-func init() {
-	ENV = os.Environ()
-	ARGS = os.Args[1:]
 }
 
 func (c *Config) MergeEnv() error {
