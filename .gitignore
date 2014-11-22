@@ -18,3 +18,4 @@ _test
 *.o
 *.cgo1.go
 _cgo_defun.c
+.config
