@@ -7,20 +7,21 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func setUserDir() {
-	user_app_data := os.Getenv("LOCALAPPDATA")
+	user_app_data := filepath.ToSlash(os.Getenv("LOCALAPPDATA"))
 	if user_app_data == "" {
-		user_app_data = filepath.Join(os.Getenv("HOMEPATH"), "AppData", "Local")
+		user_app_data = filepath.Join(filepath.ToSlash(os.Getenv("HOMEDRIVE")+os.Getenv("HOMEPATH")), "AppData", "Local")
 	}
-	USER_DIR = user_app_data
+	USER_DIR = filepath.ToSlash(user_app_data)
 }
 
 func setGlobalDir() {
-	programData := os.Getenv("ALLUSERSPROFILE")
+	programData := filepath.ToSlash(os.Getenv("ALLUSERSPROFILE"))
 	if programData == "" {
-		programData = os.Getenv("ProgramData")
+		programData = filepath.ToSlash(os.Getenv("ProgramData"))
 	}
 	GLOBAL_DIRS = programData
 }
@@ -31,12 +32,15 @@ func setWorkingDir() {
 		wd = os.Getenv("CD")
 	}
 
-	WORKING_DIR = wd
+	WORKING_DIR = filepath.ToSlash(wd)
+}
+
+func splitGlobals() []string {
+	return strings.Split(GLOBAL_DIRS, ";")
 }
 
 func init() {
 	setUserDir()
 	setGlobalDir()
-	setWorkingDir()
-	CONFIG_EXT = ".cfg"
+	setWorkingDir()	
 }

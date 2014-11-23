@@ -363,7 +363,7 @@ func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
 	if errValid := c.ValidateValues(); errValid != nil {
 		return errValid
 	}
-	dir := filepath.Dir(path)
+	dir := filepath.FromSlash(filepath.Dir(path))
 	info, errDir := os.Stat(dir)
 	if errDir != nil {
 		errDir = os.MkdirAll(dir, 0755)
@@ -372,10 +372,12 @@ func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
 		}
 	} else {
 		if !info.IsDir() {
-			return fmt.Errorf("%s is no directory", filepath.Dir(path))
+			return fmt.Errorf("%s is no directory", dir)
 		}
 	}
 
+	path = filepath.FromSlash(path)
+	
 	backup, errBackup := ioutil.ReadFile(path)
 	backupInfo, errInfo := os.Stat(path)
 	// don't write anything, if we have no config values
@@ -495,10 +497,10 @@ func (c *Config) Merge(rd io.Reader, location string) error {
 		// key := strings.TrimRight(key, " ")
 		var err error
 		if subcommand == "" {
-			// fmt.Printf("setting %#v to %#v\n", key, val)
+			//fmt.Printf("setting %#v to %#v\n", key, val)
 			err = c.set(key, val, location)
 		} else {
-			// fmt.Printf("setting %#v to %#v for subcommand %#v\n", key, val, subcommand)
+			//fmt.Printf("setting %#v to %#v for subcommand %#v\n", key, val, subcommand)
 			sub, has := c.subcommands[subcommand]
 			if !has {
 				return errors.New("unknown subcommand " + subcommand)
@@ -521,7 +523,7 @@ func (c *Config) Merge(rd io.Reader, location string) error {
 	for sc.Scan() {
 
 		pair := sc.Text()
-		// fmt.Printf("pair: %#v\n", pair)
+		//fmt.Printf("pair: %#v\n", pair)
 
 		if len(pair) == 0 {
 			continue // Todo add a new line to existing values
@@ -851,12 +853,16 @@ func (c *Config) LoadDefaults() {
 // TODO maybe an error should be returned, if the file exists, but could not be opened because
 // of missing access rights
 func (c *Config) LoadFile(path string) (err error, found bool) {
+	//fmt.Printf("before from slash: %#v\n",path)
+	path = filepath.FromSlash(path)
 	file, err0 := os.Open(path)
 	if err0 != nil {
+		//fmt.Printf("missing file: %#v: %s\n",path, err0)
 		return nil, false
 	}
 	found = true
 	defer file.Close()
+	//fmt.Printf("merging: %#v\n",path)
 	err1 := c.Merge(file, path)
 	if err1 != nil {
 		err = fmt.Errorf("can't merge file %s: %s", file.Name(), err1.Error())
@@ -868,13 +874,18 @@ func (c *Config) LoadFile(path string) (err error, found bool) {
 // the GLOBAL_DIRS and returns an error if the config could not be merged properly
 // If no config file could be found, no error is returned.
 func (c *Config) LoadGlobals() error {
-	for _, dir := range strings.Split(GLOBAL_DIRS, ":") {
+	for _, dir := range splitGlobals() {
 		err, found := c.LoadFile(filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT))
 		if found {
 			return err
 		}
 	}
 	return nil
+}
+
+// GlobalFile returns the path for the global config file in the first global directory
+func (c *Config) FirstGlobalsFile() string {
+	return c.globalsFile(splitGlobals()[0])
 }
 
 func (c *Config) SetGlobalOptions(options map[string]string) error {
@@ -935,10 +946,7 @@ func (c *Config) globalsFile(dir string) string {
 	return filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT)
 }
 
-// GlobalFile returns the path for the global config file in the first global directory
-func (c *Config) FirstGlobalsFile() string {
-	return c.globalsFile(strings.Split(GLOBAL_DIRS, ":")[0])
-}
+
 
 func (c *Config) UserFile() string {
 	return filepath.Join(USER_DIR, c.appName(), c.appName()+CONFIG_EXT)
@@ -953,6 +961,7 @@ func (c *Config) LoadUser() error {
 }
 
 func (c *Config) LocalFile() string {
+	//fmt.Println(WORKING_DIR, ".config", c.appName(), c.appName()+CONFIG_EXT)
 	return filepath.Join(WORKING_DIR, ".config", c.appName(), c.appName()+CONFIG_EXT)
 }
 

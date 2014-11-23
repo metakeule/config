@@ -6,7 +6,7 @@ var (
 	USER_DIR    string
 	GLOBAL_DIRS string // colon separated list to look for
 	WORKING_DIR string
-	CONFIG_EXT  string
+	CONFIG_EXT = ".conf"
 	ENV         []string
 	ARGS        []string
 )

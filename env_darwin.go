@@ -26,9 +26,12 @@ func setWorkingDir() {
 	WORKING_DIR = wd
 }
 
+func splitGlobals() []string {
+	return strings.Split(GLOBAL_DIRS, ":")
+}
+
 func init() {
 	setUserDir()
 	setGlobalDir()
 	setWorkingDir()
-	CONFIG_EXT = ".conf"
 }
