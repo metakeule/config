@@ -28,9 +28,17 @@ var (
 
     commit = cfg.MustSub("commit")
     
-    commitCleanup = commit.NewString("cleanup", "This option determines how ...", config.Default("default"))
+    commitCleanup = commit.NewString(
+        "cleanup", 
+        "This option determines how...", 
+        config.Default("default"),
+    )
     
-    commitAll = commit.NewBool("all", "Tell the command to automatically ...")
+    commitAll = commit.NewBool(
+        "all", 
+        "Tell the command to automatically...",
+        config.Shortflag('a'),
+    )
 )
 
 func main() {
