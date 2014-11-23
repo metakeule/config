@@ -1,6 +1,9 @@
 config
 ======
 
+
+[![Build status](https://ci.appveyor.com/api/projects/status/arvt5gn2qrtgmwgl?svg=true)](https://ci.appveyor.com/project/metakeule/config)
+
 cross plattform configuration tool.
 
 Not ready for consumption yet.
