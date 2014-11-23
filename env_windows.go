@@ -42,5 +42,5 @@ func splitGlobals() []string {
 func init() {
 	setUserDir()
 	setGlobalDir()
-	setWorkingDir()	
+	setWorkingDir()
 }

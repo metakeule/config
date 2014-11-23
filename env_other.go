@@ -1,12 +1,8 @@
-// +build darwin
+// +build !linux,!windows,!darwin
 
 package config
 
-/*
-according to http://wiki.freepascal.org/Multiplatform_Programming_Guide#Configuration_files
-/etc
-/Users/user/.config/project1
-*/
+// environment for unixy system that are not linux and not darwin, like the BSD family
 
 import (
 	"os"
@@ -23,7 +19,7 @@ func setUserDir() {
 }
 
 func setGlobalDir() {
-	GLOBAL_DIRS = "/etc/config"
+	GLOBAL_DIRS = "/usr/local/etc/config"
 }
 
 func setWorkingDir() {

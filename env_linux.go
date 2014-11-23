@@ -10,12 +10,20 @@
 
 package config
 
-import "os"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 func setUserDir() {
 	xdg_config_home := os.Getenv("XDG_CONFIG_HOME")
 	if xdg_config_home == "" {
-		xdg_config_home = os.Getenv("HOME") + "/.config"
+		home := os.Getenv("HOME")
+		if home == "" {
+			home = filepath.Join("/home", os.Getenv("USER"))
+		}
+		xdg_config_home = filepath.Join(home, ".config")
 	}
 	USER_DIR = xdg_config_home
 }
@@ -23,7 +31,7 @@ func setUserDir() {
 func setGlobalDir() {
 	xdg_config_dirs := os.Getenv("XDG_CONFIG_DIRS")
 	if xdg_config_dirs == "" {
-		xdg_config_dirs = "/etc/xdg"
+		xdg_config_dirs = "/etc/config"
 	}
 	GLOBAL_DIRS = xdg_config_dirs
 }
@@ -44,5 +52,5 @@ func splitGlobals() []string {
 func init() {
 	setUserDir()
 	setGlobalDir()
-	setWorkingDir()	
+	setWorkingDir()
 }
