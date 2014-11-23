@@ -23,7 +23,7 @@ func setUserDir() {
 }
 
 func setGlobalDir() {
-	GLOBAL_DIRS = "/etc/config"
+	GLOBAL_DIRS = "/etc"
 }
 
 func setWorkingDir() {

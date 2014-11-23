@@ -31,7 +31,7 @@ func setUserDir() {
 func setGlobalDir() {
 	xdg_config_dirs := os.Getenv("XDG_CONFIG_DIRS")
 	if xdg_config_dirs == "" {
-		xdg_config_dirs = "/etc/config"
+		xdg_config_dirs = "/etc"
 	}
 	GLOBAL_DIRS = xdg_config_dirs
 }

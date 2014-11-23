@@ -377,7 +377,7 @@ func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
 	}
 
 	path = filepath.FromSlash(path)
-	
+
 	backup, errBackup := ioutil.ReadFile(path)
 	backupInfo, errInfo := os.Stat(path)
 	// don't write anything, if we have no config values
@@ -945,8 +945,6 @@ func (c *Config) SaveToLocal() error {
 func (c *Config) globalsFile(dir string) string {
 	return filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT)
 }
-
-
 
 func (c *Config) UserFile() string {
 	return filepath.Join(USER_DIR, c.appName(), c.appName()+CONFIG_EXT)
