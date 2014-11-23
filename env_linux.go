@@ -2,6 +2,12 @@
 
 // set USER_DIR, GLOBAL_DIRS and WORKING_DIR based on the XDG Base Directory Specification
 // see http://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
+
+/*
+/etc/project1/
+/home/user/.config/project1/
+*/
+
 package config
 
 import "os"

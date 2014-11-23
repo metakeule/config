@@ -16,6 +16,12 @@ import (
 	"time"
 )
 
+/*
+TODO make more tests
+TODO make cmdline utility
+TODO improve documentation
+*/
+
 type Config struct {
 	app       string
 	version   string
@@ -108,7 +114,7 @@ func (c *Config) addOption(opt *Option) error {
 	return nil
 }
 
-// Reset cleans the values
+// Reset cleans the values, the locations and any current subcommand
 func (c *Config) Reset() {
 	c.values = map[string]interface{}{}
 	c.locations = map[string][]string{}
@@ -125,14 +131,14 @@ func (c *Config) Reset() {
 // - settings via Set() are tracked by the given location or the caller if that is empty
 func (c *Config) Locations(option string) []string {
 	if err := ValidateName(option); err != nil {
-		panic(ErrInvalidName)
+		panic(InvalidNameError(option))
 	}
 	return c.locations[option]
 }
 
 func (c *Config) set(key string, val string, location string) error {
 	if err := ValidateName(key); err != nil {
-		return ErrInvalidName
+		return InvalidNameError(key)
 	}
 	spec, has := c.spec[key]
 
@@ -179,7 +185,7 @@ func (c *Config) setMap(options map[string]string) error {
 // IsSet returns true, if the given option is set and false if not.
 func (c Config) IsSet(option string) bool {
 	if err := ValidateName(option); err != nil {
-		panic(ErrInvalidName)
+		panic(InvalidNameError(option))
 	}
 	_, has := c.values[option]
 	return has
@@ -188,7 +194,7 @@ func (c Config) IsSet(option string) bool {
 // GetBool returns the value of the option as bool
 func (c Config) GetBool(option string) bool {
 	if err := ValidateName(option); err != nil {
-		panic(ErrInvalidName)
+		panic(InvalidNameError(option))
 	}
 	v, has := c.values[option]
 	if has {
@@ -200,7 +206,7 @@ func (c Config) GetBool(option string) bool {
 // GetFloat32 returns the value of the option as float32
 func (c Config) GetFloat32(option string) float32 {
 	if err := ValidateName(option); err != nil {
-		panic(ErrInvalidName)
+		panic(InvalidNameError(option))
 	}
 	v, has := c.values[option]
 	if has {
@@ -212,7 +218,7 @@ func (c Config) GetFloat32(option string) float32 {
 // GetInt32 returns the value of the option as int32
 func (c Config) GetInt32(option string) int32 {
 	if err := ValidateName(option); err != nil {
-		panic(ErrInvalidName)
+		panic(InvalidNameError(option))
 	}
 	v, has := c.values[option]
 	if has {
@@ -224,7 +230,7 @@ func (c Config) GetInt32(option string) int32 {
 // GetTime returns the value of the option as time
 func (c Config) GetTime(option string) *time.Time {
 	if err := ValidateName(option); err != nil {
-		panic(ErrInvalidName)
+		panic(InvalidNameError(option))
 	}
 	v, has := c.values[option]
 	if has {
@@ -237,7 +243,7 @@ func (c Config) GetTime(option string) *time.Time {
 // GetString returns the value of the option as string
 func (c Config) GetString(option string) string {
 	if err := ValidateName(option); err != nil {
-		panic(ErrInvalidName)
+		panic(InvalidNameError(option))
 	}
 	v, has := c.values[option]
 	if has {
@@ -249,7 +255,7 @@ func (c Config) GetString(option string) string {
 // GetJSON unmarshals the value of the option to val.
 func (c Config) GetJSON(option string, val interface{}) error {
 	if err := ValidateName(option); err != nil {
-		panic(ErrInvalidName)
+		panic(InvalidNameError(option))
 	}
 	v, has := c.values[option]
 	if has {
@@ -278,12 +284,12 @@ func (c *Config) writeConfigValues(file *os.File) (err error) {
 			writeKey = c.subName() + "_" + k
 		}
 
-		_, err = file.WriteString("# ------ " + writeKey + " (" + c.spec[k].Type + ") ------\n# " + strings.Join(helplines, "\n# ") + "\n")
+		_, err = file.WriteString("\n# --- " + writeKey + " (" + c.spec[k].Type + ") ---\n#     " + strings.Join(helplines, "\n#     ") + "\n")
 		if err != nil {
 			return
 		}
 
-		_, err = file.WriteString(writeKey + "=")
+		_, err = file.WriteString("$" + writeKey + "=")
 		if err != nil {
 			return
 		}
@@ -296,7 +302,11 @@ func (c *Config) writeConfigValues(file *os.File) (err error) {
 		case float32:
 			_, err = file.WriteString(fmt.Sprintf("%v", ty))
 		case string:
-			_, err = file.WriteString(ty)
+			pre := ""
+			if len(ty) > 15 || strings.Contains(ty, "\n") {
+				pre = "\n"
+			}
+			_, err = file.WriteString(pre + ty)
 		case time.Time:
 			var str string
 			switch c.spec[k].Type {
@@ -310,28 +320,30 @@ func (c *Config) writeConfigValues(file *os.File) (err error) {
 				return InvalidTypeError{k, c.spec[k].Type}
 				// return ErrInvalidType(c.spec[k].Type)
 			}
-			_, err = file.WriteString(str)
+			_, err = file.WriteString(" " + str)
 		default:
 			var bt []byte
 			bt, err = json.Marshal(ty)
 			if err != nil {
 				return
 			}
-			_, err = file.Write(bt)
+			_, err = file.WriteString("\n" + string(bt))
 		}
 
 		if err != nil {
 			return
 		}
 
-		_, err = file.Write(delim)
-		if err != nil {
-			return
-		}
+		/*
+			_, err = file.Write(delim)
+			if err != nil {
+				return
+			}
+		*/
 	}
 
 	for _, sub := range c.subcommands {
-		_, err = file.WriteString("#### " + sub.subName() + " ####\n")
+		_, err = file.WriteString("\n# ------------ SUBCOMMAND " + sub.subName() + " ------------\n#")
 		if err != nil {
 			return
 		}
@@ -387,7 +399,49 @@ func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
 		}
 	}()
 
-	_, err = file.WriteString(c.app + " " + c.version + string(delim))
+	// _, err = file.WriteString(c.app + " " + c.version + string(delim))
+	_, err = file.WriteString(c.app + " " + c.version +
+		"\n# Don't delete the first line!" +
+		"\n#" +
+		"\n# This is a configuration file for the command " + c.app + " of the version " + c.version + " and compatible versions." +
+		"\n# All available options can be found by running" +
+		"\n#" +
+		"\n#           " + c.app + " --help-all" +
+		"\n#" +
+		"\n# ------------ FILE FORMAT ------------" +
+		"\n#" +
+		"\n# 1. all lines end in Unix format (LF)" +
+		"\n# 2. the first line must be 'xxxx yyy' where 'xxxx' is the command name and 'yyy' is the command version" +
+		"\n# 3. a line starting with '#' is a comment" +
+		"\n# 4. a line starting with '$' is an option key and must have the format" +
+		"\n#    '$xxxx=yyy' where 'xxxx' is the option name " +
+		"\n#    and 'yyy' is the value. The '=' may be surrounded by whitespace and the value 'yyy'" +
+		"\n#    may begin after a linefeed" +
+		"\n# 5. the option name is like the corresponding arg without any prefixing '-'" +
+		"\n#    and subcommand options are prefixed with the name of the" +
+		"\n#    subcommand followed by an underscore '_'" +
+		"\n# 6. Every line that does not begin with '#' or '$' is part of the value of the previous option key." +
+		"\n#" +
+		"\n# ------------ EXAMPLE ------------" +
+		"\n#" +
+		"\n#           git 2.1" +
+		"\n#           # a value in the same line as the option" +
+		"\n#           $commit_all=true" +
+		"\n#           # a multiline value starting in the line after the option" +
+		"\n#           $commit_message=" +
+		"\n#           a commit message that spans" +
+		"\n#           # comments are ignored" +
+		"\n#           several lines" +
+		"\n#           # a value in the same line as the option, = surrounded by whitespace" +
+		"\n#           $commit_cleanup = verbatim" +
+		"\n#" +
+		"\n# The above configuration corresponds to the following command invokation (in bash):" +
+		"\n#" +
+		"\n#           git commit --all --cleanup=verbatim --message=$'a commit message that spans\\nseveral lines'" +
+		"\n#" +
+		"\n# ------------ CONFIGURATION ------------" +
+		"\n#",
+	)
 	if err != nil {
 		return
 	}
@@ -415,76 +469,172 @@ func (c *Config) Merge(rd io.Reader, location string) error {
 
 	differentVersions := words[1] != c.version
 
-	sc.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if atEOF {
-			// fmt.Printf("at EOF with data: %s\n", string(data))
-			return len(data), data, io.EOF
-		}
-		idx := bytes.Index(data, delim)
-		if idx == -1 {
-			// fmt.Printf("XX invalid data: %#v\n", string(data))
-			return 0, nil, wrapErr(fmt.Errorf("invalid data: %#v", string(data)))
-		}
-		return idx + len(delim), data[:idx], nil
-	})
+	var keys = map[string]bool{}
 
-	for sc.Scan() {
-		pair := sc.Text()
-		// skip empty lines
-		if pair == "\n" {
-			// return errors.New("empty pair")
-			continue
-		}
-		if pair == "" {
-			// return errors.New("empty pair")
-			continue
-		}
+	var valBuf bytes.Buffer
+	var key string
+	var subcommand string
 
-		// ignore comments to the end of line
-		for strings.HasPrefix(pair, "#") {
-			idx := strings.Index(pair, "\n")
-			if idx == -1 || len(pair) < idx+1 {
-				return wrapErr(fmt.Errorf("comment must end with newline"))
+	setValue := func() error {
+		val := strings.TrimSpace(valBuf.String())
+		if val == "" {
+			if subcommand != "" {
+				key = subcommand + "_" + key
 			}
-			pair = pair[idx+1:]
+			return EmptyValueError(key)
 		}
-		/*
-			if strings.HasPrefix(pair, "#") {
-
-			}
-		*/
-		// fmt.Printf("text: %#v\n", pair)
-		ass := strings.Index(pair, "=")
-		if ass == -1 {
-			return wrapErr(fmt.Errorf("missing = in %#v", pair))
-		}
-		key, val := pair[:ass], pair[ass+1:]
-
-		underscPos := strings.Index(key, "_")
-
+		// key := strings.TrimRight(key, " ")
 		var err error
-		if underscPos == -1 {
+		if subcommand == "" {
+			// fmt.Printf("setting %#v to %#v\n", key, val)
 			err = c.set(key, val, location)
 		} else {
-			subName := key[:underscPos]
-			sub, has := c.subcommands[subName]
+			// fmt.Printf("setting %#v to %#v for subcommand %#v\n", key, val, subcommand)
+			sub, has := c.subcommands[subcommand]
 			if !has {
-				// fmt.Printf("subcommands: %#v (app: %#v)\n", c.subcommands, c.app)
-				return errors.New("unknown subcommand " + subName)
+				return errors.New("unknown subcommand " + subcommand)
 			} else {
-				err = sub.set(key[underscPos+1:], val, location)
+				err = sub.set(key, val, location)
 			}
+
+			if err != nil {
+				if differentVersions {
+					return wrapErr(fmt.Errorf("value %#v of option %s, present in config for version %s is not valid for running version %s",
+						val, key, words[1], c.version))
+				} else {
+					return wrapErr(err)
+				}
+			}
+		}
+		return nil
+	}
+
+	for sc.Scan() {
+
+		pair := sc.Text()
+		// fmt.Printf("pair: %#v\n", pair)
+
+		if len(pair) == 0 {
+			continue // Todo add a new line to existing values
 		}
 
-		// key = strings.TrimLeft(key, "\n")
-		if err != nil {
-			if differentVersions {
-				return wrapErr(fmt.Errorf("value %#v of option %s, present in config for version %s is not valid for running version %s",
-					val, key, words[1], c.version))
-			} else {
-				return wrapErr(err)
+		switch pair[:1] {
+		// comment
+		case "#":
+			continue
+			// option
+		case "$":
+			if key != "" {
+				if err := setValue(); err != nil {
+					return err
+				}
 			}
+			idx := strings.Index(pair, "=")
+			if idx == -1 {
+				return wrapErr(fmt.Errorf("missing '=' in %#v", pair))
+			}
+			key = strings.TrimRight(pair[1:idx], " ")
+			if _, has := keys[key]; has {
+				return ErrDoubleOption(key)
+			}
+			keys[key] = true
+			subcommand = ""
+
+			if underscPos := strings.Index(key, "_"); underscPos > 0 {
+				subcommand = key[:underscPos]
+				key = key[underscPos+1:]
+			}
+
+			// fmt.Printf("key: %#v subcommand: %#v\n", key, subcommand)
+
+			if err := ValidateName(key); err != nil {
+				return err
+			}
+
+			if subcommand != "" {
+				if err := ValidateName(subcommand); err != nil {
+					return err
+				}
+			}
+
+			// valueMode = true
+			valBuf.Reset()
+			if idx < len(pair)-2 {
+				valBuf.WriteString(pair[idx+1:])
+			}
+		default:
+			valBuf.WriteString("\n" + pair)
+
 		}
+
+		/*
+			if pair == "\n" {
+				continue
+			}
+			if pair == "" {
+				continue
+			}
+
+			// ignore comments to the end of line
+
+			for strings.HasPrefix(pair, "#") {
+				idx := strings.Index(pair, "\n")
+				if idx == -1 || len(pair) < idx+1 {
+					continue DoScan
+				}
+				pair = pair[idx+1:]
+			}
+
+			ass := strings.Index(pair, ":")
+			if ass == -1 {
+				return wrapErr(fmt.Errorf("missing : in %#v", pair))
+			}
+			key, val := pair[:ass], pair[ass+1:]
+
+			if strings.Contains(val, "\n") {
+				var valBuf bytes.Buffer
+				scVal := bufio.NewScanner(strings.NewReader(val))
+
+				for scVal.Scan() {
+					strs := scVal.Text()
+					if !strings.HasPrefix(strs, "#") {
+						valBuf.WriteString(strs + "\n")
+					}
+				}
+				val = valBuf.String()
+			}
+			val = strings.TrimSpace(val)
+			underscPos := strings.Index(key, "_")
+
+			var err error
+			if underscPos == -1 {
+				// fmt.Printf("setting : %#v to %#v\n", key, val)
+				err = c.set(key, val, location)
+			} else {
+				subName := key[:underscPos]
+				sub, has := c.subcommands[subName]
+				if !has {
+					// fmt.Printf("subcommands: %#v (app: %#v)\n", c.subcommands, c.app)
+					return errors.New("unknown subcommand " + subName)
+				} else {
+					// fmt.Printf("setting : %#v to %#v\n", key, val)
+					err = sub.set(key[underscPos+1:], val, location)
+				}
+			}
+
+			// key = strings.TrimLeft(key, "\n")
+			if err != nil {
+				if differentVersions {
+					return wrapErr(fmt.Errorf("value %#v of option %s, present in config for version %s is not valid for running version %s",
+						val, key, words[1], c.version))
+				} else {
+					return wrapErr(err)
+				}
+			}
+		*/
+	}
+	if key != "" {
+		setValue()
 	}
 	return nil
 }
@@ -499,6 +649,11 @@ func (c *Config) MergeEnv() error {
 			if startKey > 0 {
 				startVal := strings.Index(pair, "=")
 				key, val := pair[startKey:startVal], pair[startVal+1:]
+				val = strings.TrimSpace(val)
+
+				if val == "" {
+					return EmptyValueError(key)
+				}
 				// fmt.Printf("key %#v val %#v\n", key, val)
 				err := c.set(strings.ToLower(key), val, pair[:startVal])
 				if err != nil {
@@ -528,6 +683,8 @@ func (c *Config) MergeArgs(helpIntro string) error {
 
 func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) (merged map[string]bool, err error) {
 	merged = map[string]bool{}
+	// prevent duplicates
+	keys := map[string]bool{}
 	// fmt.Printf("args: %#v\n", os.Args[1:])
 	for _, pair := range args {
 		wrapErr := func(err error) error {
@@ -541,6 +698,11 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 				return
 			}
 			key, val = pair[:idx], pair[idx+1:]
+
+			if val == "" {
+				err = EmptyValueError(key)
+				return
+			}
 		} else {
 			key = pair
 			val = "true"
@@ -551,7 +713,7 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 		// fmt.Println(argKey)
 
 		switch key {
-		case "CONFIG_SPEC":
+		case "config-spec":
 			var bt []byte
 			bt, err = c.MarshalJSON()
 			if err != nil {
@@ -560,7 +722,7 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 			}
 			fmt.Fprintf(os.Stdout, "%s\n", bt)
 			os.Exit(0)
-		case "CONFIG_LOCATIONS":
+		case "config-locations":
 			var bt []byte
 			bt, err = json.Marshal(c.locations)
 			if err != nil {
@@ -569,7 +731,7 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 			}
 			fmt.Fprintf(os.Stdout, "%s\n", bt)
 			os.Exit(0)
-		case "CONFIG_FILES":
+		case "config-files":
 			cfgFiles := struct {
 				Global string `json:"global,omitempty"`
 				User   string `json:"user,omitempty"`
@@ -587,10 +749,10 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 			}
 			fmt.Fprintf(os.Stdout, "%s\n", bt)
 			os.Exit(0)
-		case "VERSION":
+		case "version":
 			fmt.Fprintf(os.Stdout, "%s\n", c.version)
 			os.Exit(0)
-		case "HELP":
+		case "help":
 			fmt.Fprintf(os.Stdout, "%s\n", helpIntro)
 
 			for k, spec := range c.spec {
@@ -606,6 +768,11 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 				key = sh
 			}
 
+			if keys[key] {
+				err = ErrDoubleOption(key)
+				return
+			}
+
 			// fmt.Println(key)
 			_, has := c.spec[key]
 			if ignoreUnknown && !has {
@@ -617,6 +784,7 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 				return
 			}
 			merged[argKey] = true
+			keys[key] = true
 		}
 	}
 

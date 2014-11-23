@@ -35,11 +35,11 @@ func ValidateShortflag(shortflag string) error {
 // ErrInvalidName is returned
 func ValidateName(name string) error {
 	if name == "" {
-		return ErrInvalidName
+		return InvalidNameError(name)
 	}
 
 	if !NameRegExp.MatchString(name) {
-		return ErrInvalidName
+		return InvalidNameError(name)
 	}
 
 	return nil
@@ -64,7 +64,8 @@ func ValidateType(option, typ string) error {
 	}
 }
 
-var delim = []byte("\u220e\n")
+//var delim = []byte("\u220e\n")
+var delim = []byte("\n$")
 
 // var delim = []byte("\n\n")
 
@@ -100,14 +101,11 @@ func stringToValue(typ string, in string) (out interface{}, err error) {
 }
 
 func keyToArg(key string) string {
-	out := strings.Replace(key, "_", "-", -1)
-	return "--" + out
+	return "--" + key
 }
 
 func argToKey(arg string) string {
-	out := strings.TrimLeft(arg, "-")
-	out = strings.TrimLeft(out, "-")
-	return strings.Replace(out, "-", "_", -1)
+	return strings.TrimLeft(arg, "-")
 }
 
 func err2Stderr(err error) {

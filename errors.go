@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	ErrInvalidName      = errors.New("invalid name")
+	// ErrInvalidName      = errors.New("invalid name")
 	ErrInvalidVersion   = errors.New("invalid version")
 	ErrInvalidShortflag = errors.New("invalid shortflag")
 	ErrSubSubCommand    = errors.New("subsub commands not supported")
@@ -15,6 +15,18 @@ var (
 	// ErrInvalidValue   = errors.New("invalid value")
 	ErrMissingHelp = errors.New("missing help text")
 )
+
+type EmptyValueError string
+
+func (e EmptyValueError) Error() string {
+	return fmt.Sprintf("invalid value: empty string for %#v", string(e))
+}
+
+type InvalidNameError string
+
+func (e InvalidNameError) Error() string {
+	return fmt.Sprintf("invalid name %#v", string(e))
+}
 
 type InvalidTypeError struct {
 	Option string
