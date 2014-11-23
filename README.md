@@ -13,16 +13,6 @@ Not ready for consumption yet.
 Example
 -------
 
-# a value in the same line as the option
-#           $commit_all=true
-#           # a multiline value starting in the line after the option
-#           $commit_message=
-#           a commit message that spans
-#           # comments are ignored
-#           several lines
-#           # a value in the same line as the option, = surrounded by whitespace
-#           $commit_cleanup = verbatim
-
 ```go
 package main
 
