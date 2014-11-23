@@ -378,6 +378,15 @@ func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
 
 	backup, errBackup := ioutil.ReadFile(path)
 	backupInfo, errInfo := os.Stat(path)
+	// don't write anything, if we have no config values
+	if len(c.values) == 0 {
+		// files exist, but will be deleted (no config values)
+		if errInfo == nil {
+			return os.Remove(path)
+		}
+		// files does not exist, we have no values, so lets do nothing
+		return nil
+	}
 	if errBackup != nil {
 		backup = []byte{}
 	}
