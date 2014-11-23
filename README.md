@@ -44,7 +44,7 @@ var (
 func main() {
     cfg.Run("git is a DVCS", nil)
 
-    if version.Get() {
+    if version.IsSet() {
         fmt.Println("git version 2.1.3")
     }
 
