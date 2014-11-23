@@ -13,6 +13,16 @@ Not ready for consumption yet.
 Example
 -------
 
+# a value in the same line as the option
+#           $commit_all=true
+#           # a multiline value starting in the line after the option
+#           $commit_message=
+#           a commit message that spans
+#           # comments are ignored
+#           several lines
+#           # a value in the same line as the option, = surrounded by whitespace
+#           $commit_cleanup = verbatim
+
 ```go
 package main
 
@@ -23,35 +33,33 @@ import (
 )
 
 var (
-    cfg = config.MustNew("example", "0.0.1")
-    first  = cfg.NewBool("first", "first option")
-    second = cfg.NewString("second", "second arg")
+    cfg = config.MustNew("git", "2.1.3")
+    version = cfg.NewBool("version", "prints the version")
 
-    subcmd = cfg.MustSub("subcmd")
-    subcmdExec = project.NewString("exec", "which subcommand to exec")
+    commit = cfg.MustSub("commit")
+    
+    commitCleanup = commit.NewString("cleanup", "This option determines how ...", config.Default("default"))
+    
+    commitAll = commit.NewBool("all", "Tell the command to automatically ...")
 )
 
 func main() {
-    cfg.Run("example is an example app for config", nil)
+    cfg.Run("git is a DVCS", nil)
 
-    if first.Get() {
-        fmt.Println("first is true")
-    } else {
-        fmt.Println("first is false")
+    if version.Get() {
+        fmt.Println("git version 2.1.3")
     }
 
-    fmt.Printf("first locations: %#v\n", cfg.Locations("extra"))
-
-    fmt.Printf("second is: %#v\n", second.Get())
-    fmt.Printf("second locations: %#v\n", cfg.Locations("second"))
-
+    
     switch cfg.CurrentSub() {
     case nil:
         fmt.Println("no subcommand")
-    case project:
-        fmt.Println("subcmd subcommand")
-        fmt.Println("subcmd exec is: ", subcmdExec.Get())
-        fmt.Printf("subcmd exec locations: %#v\n", subcmd.Locations("exec"))
+    case commit:
+        fmt.Println("commit cleanup is: ", commitCleanup.Get())
+        fmt.Printf("commit cleanup locations: %#v\n", commit.Locations("cleanup"))
+        
+        fmt.Println("commit all is: ", commitAll.Get())
+        fmt.Printf("commit all locations: %#v\n", commit.Locations("all"))
     default:
         panic("must not happen")
     }
