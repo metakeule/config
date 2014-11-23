@@ -1,6 +1,7 @@
 config
 ======
 
+[ ![Codeship Status for metakeule/config](https://codeship.io/projects/e39e9b00-5584-0132-0404-0e68a1ef8c1b/status)](https://codeship.io/projects/49328)
 
 [![Build status](https://ci.appveyor.com/api/projects/status/arvt5gn2qrtgmwgl?svg=true)](https://ci.appveyor.com/project/metakeule/config)
 
