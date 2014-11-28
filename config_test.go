@@ -234,7 +234,7 @@ func TestConfig(t *testing.T) {
 				ARGS = []string{}
 			}
 
-			if err := Load(cfg, "test app"); err != nil {
+			if err := Load(cfg, "test app", true); err != nil {
 				t.Fatal(err)
 			}
 
