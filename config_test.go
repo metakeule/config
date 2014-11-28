@@ -192,7 +192,7 @@ func TestConfig(t *testing.T) {
 				}
 			}
 
-			if err := cfg.SaveToGlobals(); err != nil {
+			if err := SaveToGlobals(cfg); err != nil {
 				t.Fatal(err)
 			}
 
@@ -204,7 +204,7 @@ func TestConfig(t *testing.T) {
 				}
 			}
 
-			if err := cfg.SaveToUser(); err != nil {
+			if err := SaveToUser(cfg); err != nil {
 				t.Fatal(err)
 			}
 
@@ -216,7 +216,7 @@ func TestConfig(t *testing.T) {
 				}
 			}
 
-			if err := cfg.SaveToLocal(); err != nil {
+			if err := SaveToLocal(cfg); err != nil {
 				t.Fatal(err)
 			}
 
@@ -234,7 +234,7 @@ func TestConfig(t *testing.T) {
 				ARGS = []string{}
 			}
 
-			if err := cfg.Load("test app"); err != nil {
+			if err := Load(cfg, "test app"); err != nil {
 				t.Fatal(err)
 			}
 

@@ -70,6 +70,18 @@ func MustNew(app string, version string) *Config {
 	return c
 }
 
+func (c *Config) EachSpec(fn func(name string, opt *Option)) {
+	for k, opt := range c.spec {
+	    fn(k,opt)
+	}
+}
+
+func (c *Config) EachValue(fn func(name string, val interface{})) {
+	for k, val := range c.values {
+	    fn(k,val)
+	}
+}
+
 // MustSub calls Sub() and panics on errors
 func (c *Config) MustSub(name string) *Config {
 	s, err := c.Sub(name)
@@ -96,6 +108,7 @@ func (c *Config) Sub(name string) (*Config, error) {
 	return s, nil
 }
 
+// addOption adds the given option, validates it and returns any error
 func (c *Config) addOption(opt *Option) error {
 	if err := ValidateName(opt.Name); err != nil {
 		return ErrInvalidOptionName(opt.Name)
@@ -136,24 +149,34 @@ func (c *Config) Locations(option string) []string {
 	return c.locations[option]
 }
 
-func (c *Config) set(key string, val string, location string) error {
-	if err := ValidateName(key); err != nil {
-		return InvalidNameError(key)
+// IsOption returns true, if the given option is allowed
+func (c *Config) IsOption(option string) bool {
+	if err := ValidateName(option); err != nil {
+		return false
 	}
-	spec, has := c.spec[key]
+	_, has := c.spec[option]
+	return has
+}
+
+// set sets the option to the value and validates the value returning any errors
+func (c *Config) set(option string, value string, location string) error {
+	if err := ValidateName(option); err != nil {
+		return InvalidNameError(option)
+	}
+	spec, has := c.spec[option]
 
 	if !has {
-		return UnknownOptionError{c.version, key}
+		return UnknownOptionError{c.version, option}
 	}
 
-	out, err := stringToValue(spec.Type, val)
+	out, err := stringToValue(spec.Type, value)
 
 	if err != nil {
-		return InvalidValueError{key, val}
+		return InvalidValueError{option, value}
 	}
 
-	c.values[key] = out
-	c.locations[key] = append(c.locations[key], location)
+	c.values[option] = out
+	c.locations[option] = append(c.locations[option], location)
 	return nil
 }
 
@@ -168,7 +191,8 @@ func (c *Config) Set(option string, val string, location string) error {
 	return c.set(option, val, location)
 }
 
-// setMap sets the given options.
+// setMap sets the given options and tracks the calling function as
+// location
 func (c *Config) setMap(options map[string]string) error {
 	_, file, line, _ := runtime.Caller(1)
 	location := fmt.Sprintf("%s:%d", file, line)
@@ -191,273 +215,78 @@ func (c Config) IsSet(option string) bool {
 	return has
 }
 
-// GetBool returns the value of the option as bool
-func (c Config) GetBool(option string) bool {
-	if err := ValidateName(option); err != nil {
-		panic(InvalidNameError(option))
-	}
-	v, has := c.values[option]
-	if has {
-		return v.(bool)
-	}
-	return false
-}
-
-// GetFloat32 returns the value of the option as float32
-func (c Config) GetFloat32(option string) float32 {
-	if err := ValidateName(option); err != nil {
-		panic(InvalidNameError(option))
-	}
-	v, has := c.values[option]
-	if has {
-		return v.(float32)
-	}
-	return 0
-}
-
-// GetInt32 returns the value of the option as int32
-func (c Config) GetInt32(option string) int32 {
-	if err := ValidateName(option); err != nil {
-		panic(InvalidNameError(option))
-	}
-	v, has := c.values[option]
-	if has {
-		return v.(int32)
-	}
-	return 0
-}
-
-// GetTime returns the value of the option as time
-func (c Config) GetTime(option string) *time.Time {
-	if err := ValidateName(option); err != nil {
-		panic(InvalidNameError(option))
-	}
-	v, has := c.values[option]
-	if has {
-		val := v.(time.Time)
-		return &val
+// CheckMissing checks if mandatory values are missing inside the values map
+// CheckMissing stops on the first error
+func (c *Config) CheckMissing() error {
+	for k, spec := range c.spec {
+		if spec.Required && spec.Default == nil {
+			if _, has := c.values[k]; !has {
+				return MissingOptionError{c.version, k}
+			}
+		}
 	}
 	return nil
 }
 
-// GetString returns the value of the option as string
-func (c Config) GetString(option string) string {
-	if err := ValidateName(option); err != nil {
-		panic(InvalidNameError(option))
+// ValidateValues validates only values that are set and not nil.
+// It does not check for missing mandatory values (use CheckMissing for that)
+// ValidateValues stops on the first error
+func (c *Config) ValidateValues() error {
+	for k, v := range c.values {
+		if v == nil {
+			continue
+		}
+		spec, has := c.spec[k]
+		if !has {
+			return UnknownOptionError{c.version, k}
+			// return errors.New("unkown config key " + k)
+		}
+		if err := spec.ValidateValue(v); err != nil {
+			return InvalidConfig{c.version, err}
+		}
 	}
-	v, has := c.values[option]
-	if has {
-		return v.(string)
+	return nil
+}
+
+// CurrentSub returns the current subcommand. It returns nil, if there is no current sub.
+func (c *Config) CurrentSub() *Config {
+	return c.currentSub
+}
+
+// isSub checks if the *Config relongs to a subcommand
+func (c *Config) isSub() bool {
+	return !(strings.Index(c.app, "_") == -1)
+}
+
+// MarshalJSON serializes the spec to JSON
+func (c *Config) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.spec)
+}
+
+// UnmarshalJSON deserializes the spec from JSON
+func (c *Config) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &c.spec)
+}
+
+// appName returns the name of the app
+func (c *Config) appName() string {
+	if c.isSub() {
+		return c.app[:strings.Index(c.app, "_")]
+	}
+	return c.app
+}
+
+// subName returns the name of the subcommand and the empty string, if there is no subcommand, the empty string is returned
+func (c *Config) subName() string {
+	if c.isSub() {
+		return c.app[strings.Index(c.app, "_")+1:]
 	}
 	return ""
 }
 
-// GetJSON unmarshals the value of the option to val.
-func (c Config) GetJSON(option string, val interface{}) error {
-	if err := ValidateName(option); err != nil {
-		panic(InvalidNameError(option))
-	}
-	v, has := c.values[option]
-	if has {
-		return json.Unmarshal([]byte(v.(string)), val)
-	}
-	return nil
-}
-
-func (c *Config) writeConfigValues(file *os.File) (err error) {
-
-	for k, v := range c.values {
-		// do nothing for nil values
-		if v == nil {
-			continue
-		}
-
-		help := strings.Split(c.spec[k].Help, "\n")
-		helplines := []string{}
-
-		for _, h := range help {
-			helplines = append(helplines, strings.TrimSpace(h))
-		}
-
-		writeKey := k
-		if c.isSub() {
-			writeKey = c.subName() + "_" + k
-		}
-
-		_, err = file.WriteString("\n# --- " + writeKey + " (" + c.spec[k].Type + ") ---\n#     " + strings.Join(helplines, "\n#     ") + "\n")
-		if err != nil {
-			return
-		}
-
-		_, err = file.WriteString("$" + writeKey + "=")
-		if err != nil {
-			return
-		}
-
-		switch ty := v.(type) {
-		case bool:
-			_, err = file.WriteString(fmt.Sprintf("%v", ty))
-		case int32:
-			_, err = file.WriteString(fmt.Sprintf("%v", ty))
-		case float32:
-			_, err = file.WriteString(fmt.Sprintf("%v", ty))
-		case string:
-			pre := ""
-			if len(ty) > 15 || strings.Contains(ty, "\n") {
-				pre = "\n"
-			}
-			_, err = file.WriteString(pre + ty)
-		case time.Time:
-			var str string
-			switch c.spec[k].Type {
-			case "date":
-				str = ty.Format(DateFormat)
-			case "time":
-				str = ty.Format(TimeFormat)
-			case "datetime":
-				str = ty.Format(DateTimeFormat)
-			default:
-				return InvalidTypeError{k, c.spec[k].Type}
-				// return ErrInvalidType(c.spec[k].Type)
-			}
-			_, err = file.WriteString(" " + str)
-		default:
-			var bt []byte
-			bt, err = json.Marshal(ty)
-			if err != nil {
-				return
-			}
-			_, err = file.WriteString("\n" + string(bt))
-		}
-
-		if err != nil {
-			return
-		}
-
-		/*
-			_, err = file.Write(delim)
-			if err != nil {
-				return
-			}
-		*/
-	}
-
-	for _, sub := range c.subcommands {
-		_, err = file.WriteString("\n# ------------ SUBCOMMAND " + sub.subName() + " ------------\n#")
-		if err != nil {
-			return
-		}
-		sub.writeConfigValues(file)
-	}
-	return
-}
-
-// WriteConfigFile writes the configuration values to the given file
-// The file is overwritten/created on success and a backup of an existing file is written back
-// if an error happens
-// the given perm is only used to create new files.
-func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
-	if c.isSub() {
-		return errors.New("WriteConfigFile must not be called in sub command")
-	}
-	if errValid := c.ValidateValues(); errValid != nil {
-		return errValid
-	}
-	dir := filepath.FromSlash(filepath.Dir(path))
-	info, errDir := os.Stat(dir)
-	if errDir != nil {
-		errDir = os.MkdirAll(dir, 0755)
-		if errDir != nil {
-			return errDir
-		}
-	} else {
-		if !info.IsDir() {
-			return fmt.Errorf("%s is no directory", dir)
-		}
-	}
-
-	path = filepath.FromSlash(path)
-
-	backup, errBackup := ioutil.ReadFile(path)
-	backupInfo, errInfo := os.Stat(path)
-	// don't write anything, if we have no config values
-	if len(c.values) == 0 {
-		// files exist, but will be deleted (no config values)
-		if errInfo == nil {
-			return os.Remove(path)
-		}
-		// files does not exist, we have no values, so lets do nothing
-		return nil
-	}
-	if errBackup != nil {
-		backup = []byte{}
-	}
-	if errInfo == nil {
-		perm = backupInfo.Mode()
-	}
-	file, errCreate := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, perm)
-	if errCreate != nil {
-		return errCreate
-	}
-
-	defer func() {
-		file.Close()
-		if err != nil {
-			os.Remove(path)
-			if len(backup) != 0 {
-				ioutil.WriteFile(path, backup, perm)
-			}
-		}
-	}()
-
-	// _, err = file.WriteString(c.app + " " + c.version + string(delim))
-	_, err = file.WriteString(c.app + " " + c.version +
-		"\n# Don't delete the first line!" +
-		"\n#" +
-		"\n# This is a configuration file for the command " + c.app + " of the version " + c.version + " and compatible versions." +
-		"\n# All available options can be found by running" +
-		"\n#" +
-		"\n#           " + c.app + " --help-all" +
-		"\n#" +
-		"\n# ------------ FILE FORMAT ------------" +
-		"\n#" +
-		"\n# 1. all lines end in Unix format (LF)" +
-		"\n# 2. the first line must be 'xxxx yyy' where 'xxxx' is the command name and 'yyy' is the command version" +
-		"\n# 3. a line starting with '#' is a comment" +
-		"\n# 4. a line starting with '$' is an option key and must have the format" +
-		"\n#    '$xxxx=yyy' where 'xxxx' is the option name " +
-		"\n#    and 'yyy' is the value. The '=' may be surrounded by whitespace and the value 'yyy'" +
-		"\n#    may begin after a linefeed" +
-		"\n# 5. the option name is like the corresponding arg without any prefixing '-'" +
-		"\n#    and subcommand options are prefixed with the name of the" +
-		"\n#    subcommand followed by an underscore '_'" +
-		"\n# 6. Every line that does not begin with '#' or '$' is part of the value of the previous option key." +
-		"\n#" +
-		"\n# ------------ EXAMPLE ------------" +
-		"\n#" +
-		"\n#           git 2.1" +
-		"\n#           # a value in the same line as the option" +
-		"\n#           $commit_all=true" +
-		"\n#           # a multiline value starting in the line after the option" +
-		"\n#           $commit_message=" +
-		"\n#           a commit message that spans" +
-		"\n#           # comments are ignored" +
-		"\n#           several lines" +
-		"\n#           # a value in the same line as the option, = surrounded by whitespace" +
-		"\n#           $commit_cleanup = verbatim" +
-		"\n#" +
-		"\n# The above configuration corresponds to the following command invokation (in bash):" +
-		"\n#" +
-		"\n#           git commit --all --cleanup=verbatim --message=$'a commit message that spans\\nseveral lines'" +
-		"\n#" +
-		"\n# ------------ CONFIGURATION ------------" +
-		"\n#",
-	)
-	if err != nil {
-		return
-	}
-
-	return c.writeConfigValues(file)
+// Binary returns the path to the binary of the app
+func (c *Config) Binary() (path string, err error) {
+	return exec.LookPath(c.appName())
 }
 
 func (c *Config) Merge(rd io.Reader, location string) error {
@@ -578,71 +407,6 @@ func (c *Config) Merge(rd io.Reader, location string) error {
 
 		}
 
-		/*
-			if pair == "\n" {
-				continue
-			}
-			if pair == "" {
-				continue
-			}
-
-			// ignore comments to the end of line
-
-			for strings.HasPrefix(pair, "#") {
-				idx := strings.Index(pair, "\n")
-				if idx == -1 || len(pair) < idx+1 {
-					continue DoScan
-				}
-				pair = pair[idx+1:]
-			}
-
-			ass := strings.Index(pair, ":")
-			if ass == -1 {
-				return wrapErr(fmt.Errorf("missing : in %#v", pair))
-			}
-			key, val := pair[:ass], pair[ass+1:]
-
-			if strings.Contains(val, "\n") {
-				var valBuf bytes.Buffer
-				scVal := bufio.NewScanner(strings.NewReader(val))
-
-				for scVal.Scan() {
-					strs := scVal.Text()
-					if !strings.HasPrefix(strs, "#") {
-						valBuf.WriteString(strs + "\n")
-					}
-				}
-				val = valBuf.String()
-			}
-			val = strings.TrimSpace(val)
-			underscPos := strings.Index(key, "_")
-
-			var err error
-			if underscPos == -1 {
-				// fmt.Printf("setting : %#v to %#v\n", key, val)
-				err = c.set(key, val, location)
-			} else {
-				subName := key[:underscPos]
-				sub, has := c.subcommands[subName]
-				if !has {
-					// fmt.Printf("subcommands: %#v (app: %#v)\n", c.subcommands, c.app)
-					return errors.New("unknown subcommand " + subName)
-				} else {
-					// fmt.Printf("setting : %#v to %#v\n", key, val)
-					err = sub.set(key[underscPos+1:], val, location)
-				}
-			}
-
-			// key = strings.TrimLeft(key, "\n")
-			if err != nil {
-				if differentVersions {
-					return wrapErr(fmt.Errorf("value %#v of option %s, present in config for version %s is not valid for running version %s",
-						val, key, words[1], c.version))
-				} else {
-					return wrapErr(err)
-				}
-			}
-		*/
 	}
 	if key != "" {
 		setValue()
@@ -748,9 +512,9 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 				User   string `json:"user,omitempty"`
 				Local  string `json:"local,omitempty"`
 			}{
-				c.FirstGlobalsFile(),
-				c.UserFile(),
-				c.LocalFile(),
+				FirstGlobalsFile(c),
+				UserFile(c),
+				LocalFile(c),
 			}
 			var bt []byte
 			bt, err = json.Marshal(cfgFiles)
@@ -806,314 +570,283 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 	return
 }
 
-// CheckMissing checks if mandatory values are missing inside the values map
-// CheckMissing stops on the first error
-func (c *Config) CheckMissing() error {
-	for k, spec := range c.spec {
-		if spec.Required && spec.Default == nil {
-			if _, has := c.values[k]; !has {
-				return MissingOptionError{c.version, k}
-			}
-		}
+// GetBool returns the value of the option as bool
+func (c Config) GetBool(option string) bool {
+	if err := ValidateName(option); err != nil {
+		panic(InvalidNameError(option))
+	}
+	v, has := c.values[option]
+	if has {
+		return v.(bool)
+	}
+	return false
+}
+
+// GetFloat32 returns the value of the option as float32
+func (c Config) GetFloat32(option string) float32 {
+	if err := ValidateName(option); err != nil {
+		panic(InvalidNameError(option))
+	}
+	v, has := c.values[option]
+	if has {
+		return v.(float32)
+	}
+	return 0
+}
+
+// GetInt32 returns the value of the option as int32
+func (c Config) GetInt32(option string) int32 {
+	if err := ValidateName(option); err != nil {
+		panic(InvalidNameError(option))
+	}
+	v, has := c.values[option]
+	if has {
+		return v.(int32)
+	}
+	return 0
+}
+
+// GetValue returns the value of the option
+func (c Config) GetValue(option string) interface{} {
+	if err := ValidateName(option); err != nil {
+		panic(InvalidNameError(option))
+	}
+	v, has := c.values[option]
+	if has {
+		return v
 	}
 	return nil
 }
 
-// ValidateValues validates only values that are set and not nil.
-// It does not check for missing mandatory values (use CheckMissing for that)
-// ValidateValues stops on the first error
-func (c *Config) ValidateValues() error {
-	for k, v := range c.values {
-		if v == nil {
-			continue
-		}
-		spec, has := c.spec[k]
-		if !has {
-			return UnknownOptionError{c.version, k}
-			// return errors.New("unkown config key " + k)
-		}
-		if err := spec.ValidateValue(v); err != nil {
-			return InvalidConfig{c.version, err}
-		}
+// GetTime returns the value of the option as time
+func (c Config) GetTime(option string) *time.Time {
+	if err := ValidateName(option); err != nil {
+		panic(InvalidNameError(option))
+	}
+	v, has := c.values[option]
+	if has {
+		val := v.(time.Time)
+		return &val
 	}
 	return nil
 }
 
-func (c *Config) LoadDefaults() {
-	for k, spec := range c.spec {
-		if spec.Default != nil {
-			c.values[k] = spec.Default
-			c.locations[k] = append(c.locations[k], fmt.Sprintf("%v", spec.Default))
-		}
+// GetString returns the value of the option as string
+func (c Config) GetString(option string) string {
+	if err := ValidateName(option); err != nil {
+		panic(InvalidNameError(option))
 	}
-}
-
-// LoadFile merges the config from the given file and returns any error happening during the merge
-// If the file could not be opened (does not exist), no error is returned
-// TODO maybe an error should be returned, if the file exists, but could not be opened because
-// of missing access rights
-func (c *Config) LoadFile(path string) (err error, found bool) {
-	//fmt.Printf("before from slash: %#v\n",path)
-	path = filepath.FromSlash(path)
-	file, err0 := os.Open(path)
-	if err0 != nil {
-		//fmt.Printf("missing file: %#v: %s\n",path, err0)
-		return nil, false
-	}
-	found = true
-	defer file.Close()
-	//fmt.Printf("merging: %#v\n",path)
-	err1 := c.Merge(file, path)
-	if err1 != nil {
-		err = fmt.Errorf("can't merge file %s: %s", file.Name(), err1.Error())
-	}
-	return
-}
-
-// LoadGlobals loads the first config file for the app it could find inside
-// the GLOBAL_DIRS and returns an error if the config could not be merged properly
-// If no config file could be found, no error is returned.
-func (c *Config) LoadGlobals() error {
-	for _, dir := range splitGlobals() {
-		err, found := c.LoadFile(filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT))
-		if found {
-			return err
-		}
-	}
-	return nil
-}
-
-// GlobalFile returns the path for the global config file in the first global directory
-func (c *Config) FirstGlobalsFile() string {
-	return c.globalsFile(splitGlobals()[0])
-}
-
-func (c *Config) SetGlobalOptions(options map[string]string) error {
-	c.Reset()
-	if err := c.setMap(options); err != nil {
-		return err
-	}
-	return c.SaveToGlobals()
-}
-
-func (c *Config) SetUserOptions(options map[string]string) error {
-	c.Reset()
-	if err := c.setMap(options); err != nil {
-		return err
-	}
-	return c.SaveToUser()
-}
-
-func (c *Config) SetLocalOptions(options map[string]string) error {
-	c.Reset()
-	if err := c.setMap(options); err != nil {
-		return err
-	}
-	return c.SaveToLocal()
-}
-
-// SaveToGlobals saves the given config values to a global config file
-// don't save secrets inside the global config, since it is readable for everyone
-// A new global config is written with 0644. The config is saved inside the first
-// directory of GLOBAL_DIRS
-func (c *Config) SaveToGlobals() error {
-	if GLOBAL_DIRS == "" {
-		return errors.New("GLOBAL_DIRS not set")
-	}
-	return c.WriteConfigFile(c.FirstGlobalsFile(), 0644)
-}
-
-// SaveToUser saves all values to the user config file
-// creating missing directories
-// A new config is written with 0640, ro readable for user group and writeable for the user
-func (c *Config) SaveToUser() error {
-	if USER_DIR == "" {
-		return errors.New("USER_DIR not set")
-	}
-	return c.WriteConfigFile(c.UserFile(), 0640)
-}
-
-// SaveToLocal saves all values to the local config file
-// A new config is written with 0640, ro readable for user group and writeable for the user
-func (c *Config) SaveToLocal() error {
-	if WORKING_DIR == "" {
-		return errors.New("WORKING_DIR not set")
-	}
-	return c.WriteConfigFile(c.LocalFile(), 0640)
-}
-
-func (c *Config) globalsFile(dir string) string {
-	return filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT)
-}
-
-func (c *Config) UserFile() string {
-	return filepath.Join(USER_DIR, c.appName(), c.appName()+CONFIG_EXT)
-}
-
-func (c *Config) LoadUser() error {
-	err, found := c.LoadFile(c.UserFile())
-	if found {
-		return err
-	}
-	return nil
-}
-
-func (c *Config) LocalFile() string {
-	//fmt.Println(WORKING_DIR, ".config", c.appName(), c.appName()+CONFIG_EXT)
-	return filepath.Join(WORKING_DIR, ".config", c.appName(), c.appName()+CONFIG_EXT)
-}
-
-// LoadLocals merges config inside a .config subdir in the local directory
-func (c *Config) LoadLocals() error {
-	// fmt.Println("loading locals from " + c.LocalFile())
-	err, found := c.LoadFile(c.LocalFile())
-	if found {
-		return err
-	}
-	return nil
-}
-
-// Load loads the config values in the following order where
-// each loader overwrittes corresponding config keys that have been defined
-/*
-	defaults
-	global config
-	user config
-	local config
-	env config
-	args config
-*/
-// in the args config any wrong syntax or values result in writing the error to StdErr and
-// exiting the program. also if --config_spec is set the spec is directly written to the
-// StdOut and the program is exiting. If --help is set, the help message is printed with the
-// the help  messages for the config options
-func (c *Config) Run(helpIntro string, validator func(*Config) error) {
-	err2Stderr(c.Load(helpIntro))
-	if validator != nil {
-		err2Stderr(validator(c))
-	}
-}
-
-// returns nil, if there is no current sub
-func (c *Config) CurrentSub() *Config {
-	return c.currentSub
-}
-
-func (c *Config) isSub() bool {
-	return !(strings.Index(c.app, "_") == -1)
-}
-
-func (c *Config) appName() string {
-	if c.isSub() {
-		return c.app[:strings.Index(c.app, "_")]
-	}
-	return c.app
-}
-
-func (c *Config) subName() string {
-	if c.isSub() {
-		return c.app[strings.Index(c.app, "_")+1:]
+	v, has := c.values[option]
+	if has {
+		return v.(string)
 	}
 	return ""
 }
 
-func (c *Config) Load(helpIntro string) error {
-	// clear old values
-	c.Reset()
-
-	// fmt.Printf("ARGS: %#v\n", ARGS)
-
-	// first load defaults
-	c.LoadDefaults()
-
-	// then overwrite with globals, return any error
-	if err := c.LoadGlobals(); err != nil {
-		return err
+// GetJSON unmarshals the value of the option to val.
+func (c Config) GetJSON(option string, val interface{}) error {
+	if err := ValidateName(option); err != nil {
+		panic(InvalidNameError(option))
 	}
-
-	// then overwrite with user, return any error
-	if err := c.LoadUser(); err != nil {
-		return err
+	v, has := c.values[option]
+	if has {
+		return json.Unmarshal([]byte(v.(string)), val)
 	}
+	return nil
+}
 
-	// then overwrite with locals, return any error
-	if err := c.LoadLocals(); err != nil {
-		return err
+// WriteConfigFile writes the configuration values to the given file
+// The file is overwritten/created on success and a backup of an existing file is written back
+// if an error happens
+// the given perm is only used to create new files.
+func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
+	if c.isSub() {
+		return errors.New("WriteConfigFile must not be called in sub command")
 	}
-
-	// then overwrite with env, return any error
-	if err := c.MergeEnv(); err != nil {
-		return err
+	if errValid := c.ValidateValues(); errValid != nil {
+		return errValid
 	}
-
-	if len(ARGS) > 0 {
-		// fmt.Println("we are in subcommand " + ARGS[0])
-		if sub, has := c.subcommands[strings.ToLower(ARGS[0])]; has {
-			// fmt.Println("we are in subcommand " + ARGS[0])
-			c.currentSub = sub
-			if len(ARGS) == 1 {
-				ARGS = []string{}
-			} else {
-				ARGS = ARGS[1:]
-			}
-
-			// then overwrite with env, return any error
-			if err := sub.MergeEnv(); err != nil {
-				return err
-			}
-
-			merged1, err1 := c.mergeArgs(helpIntro, true, ARGS)
-			if err1 != nil {
-				return err1
-			}
-
-			// then overwrite with args
-			merged2, err2 := sub.mergeArgs(helpIntro, true, ARGS)
-			if err2 != nil {
-				return err2
-			}
-
-			// fmt.Printf("merged1: %#v\nmerged2: %#v\n", merged1, merged2)
-
-			for _, arg := range ARGS {
-				key := arg
-				if idx := strings.Index(arg, "="); idx != -1 {
-					key = arg[:idx]
-				}
-
-				if !merged1[key] && !merged2[key] {
-					return UnknownOptionError{c.version, arg}
-				}
-			}
-			return nil
-
-			//return sub.Load(helpIntro)
+	dir := filepath.FromSlash(filepath.Dir(path))
+	info, errDir := os.Stat(dir)
+	if errDir != nil {
+		errDir = os.MkdirAll(dir, 0755)
+		if errDir != nil {
+			return errDir
+		}
+	} else {
+		if !info.IsDir() {
+			return fmt.Errorf("%s is no directory", dir)
 		}
 	}
 
-	// then overwrite with args
-	return c.MergeArgs(helpIntro)
-}
+	path = filepath.FromSlash(path)
 
-func (c *Config) MarshalJSON() ([]byte, error) {
-	return json.Marshal(c.spec)
-}
-
-func (c *Config) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, &c.spec)
-}
-
-func (c *Config) GetSpecFromBinary() error {
-	p, err := exec.LookPath(c.app)
-	if err != nil {
-		return err
+	backup, errBackup := ioutil.ReadFile(path)
+	backupInfo, errInfo := os.Stat(path)
+	// don't write anything, if we have no config values
+	if len(c.values) == 0 {
+		// files exist, but will be deleted (no config values)
+		if errInfo == nil {
+			return os.Remove(path)
+		}
+		// files does not exist, we have no values, so lets do nothing
+		return nil
+	}
+	if errBackup != nil {
+		backup = []byte{}
+	}
+	if errInfo == nil {
+		perm = backupInfo.Mode()
+	}
+	file, errCreate := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, perm)
+	if errCreate != nil {
+		return errCreate
 	}
 
-	cmd := exec.Command(p, "--config_spec")
-	var out []byte
-	out, err = cmd.Output()
+	defer func() {
+		file.Close()
+		if err != nil {
+			os.Remove(path)
+			if len(backup) != 0 {
+				ioutil.WriteFile(path, backup, perm)
+			}
+		}
+	}()
+
+	// _, err = file.WriteString(c.app + " " + c.version + string(delim))
+	_, err = file.WriteString(c.app + " " + c.version +
+		"\n# Don't delete the first line!" +
+		"\n#" +
+		"\n# This is a configuration file for the command " + c.app + " of the version " + c.version + " and compatible versions." +
+		"\n# All available options can be found by running" +
+		"\n#" +
+		"\n#           " + c.app + " --help-all" +
+		"\n#" +
+		"\n# ------------ FILE FORMAT ------------" +
+		"\n#" +
+		"\n# 1. all lines end in Unix format (LF)" +
+		"\n# 2. the first line must be 'xxxx yyy' where 'xxxx' is the command name and 'yyy' is the command version" +
+		"\n# 3. a line starting with '#' is a comment" +
+		"\n# 4. a line starting with '$' is an option key and must have the format" +
+		"\n#    '$xxxx=yyy' where 'xxxx' is the option name " +
+		"\n#    and 'yyy' is the value. The '=' may be surrounded by whitespace and the value 'yyy'" +
+		"\n#    may begin after a linefeed" +
+		"\n# 5. the option name is like the corresponding arg without any prefixing '-'" +
+		"\n#    and subcommand options are prefixed with the name of the" +
+		"\n#    subcommand followed by an underscore '_'" +
+		"\n# 6. Every line that does not begin with '#' or '$' is part of the value of the previous option key." +
+		"\n#" +
+		"\n# ------------ EXAMPLE ------------" +
+		"\n#" +
+		"\n#           git 2.1" +
+		"\n#           # a value in the same line as the option" +
+		"\n#           $commit_all=true" +
+		"\n#           # a multiline value starting in the line after the option" +
+		"\n#           $commit_message=" +
+		"\n#           a commit message that spans" +
+		"\n#           # comments are ignored" +
+		"\n#           several lines" +
+		"\n#           # a value in the same line as the option, = surrounded by whitespace" +
+		"\n#           $commit_cleanup = verbatim" +
+		"\n#" +
+		"\n# The above configuration corresponds to the following command invokation (in bash):" +
+		"\n#" +
+		"\n#           git commit --all --cleanup=verbatim --message=$'a commit message that spans\\nseveral lines'" +
+		"\n#" +
+		"\n# ------------ CONFIGURATION ------------" +
+		"\n#",
+	)
 	if err != nil {
-		return err
+		return
 	}
-	return c.UnmarshalJSON(out)
+
+	return c.writeConfigValues(file)
+}
+
+func (c *Config) writeConfigValues(file *os.File) (err error) {
+
+	for k, v := range c.values {
+		// do nothing for nil values
+		if v == nil {
+			continue
+		}
+
+		help := strings.Split(c.spec[k].Help, "\n")
+		helplines := []string{}
+
+		for _, h := range help {
+			helplines = append(helplines, strings.TrimSpace(h))
+		}
+
+		writeKey := k
+		if c.isSub() {
+			writeKey = c.subName() + "_" + k
+		}
+
+		_, err = file.WriteString("\n# --- " + writeKey + " (" + c.spec[k].Type + ") ---\n#     " + strings.Join(helplines, "\n#     ") + "\n")
+		if err != nil {
+			return
+		}
+
+		_, err = file.WriteString("$" + writeKey + "=")
+		if err != nil {
+			return
+		}
+
+		switch ty := v.(type) {
+		case bool:
+			_, err = file.WriteString(fmt.Sprintf("%v", ty))
+		case int32:
+			_, err = file.WriteString(fmt.Sprintf("%v", ty))
+		case float32:
+			_, err = file.WriteString(fmt.Sprintf("%v", ty))
+		case string:
+			pre := ""
+			if len(ty) > 15 || strings.Contains(ty, "\n") {
+				pre = "\n"
+			}
+			_, err = file.WriteString(pre + ty)
+		case time.Time:
+			var str string
+			switch c.spec[k].Type {
+			case "date":
+				str = ty.Format(DateFormat)
+			case "time":
+				str = ty.Format(TimeFormat)
+			case "datetime":
+				str = ty.Format(DateTimeFormat)
+			default:
+				return InvalidTypeError{k, c.spec[k].Type}
+				// return ErrInvalidType(c.spec[k].Type)
+			}
+			_, err = file.WriteString(" " + str)
+		default:
+			var bt []byte
+			bt, err = json.Marshal(ty)
+			if err != nil {
+				return
+			}
+			_, err = file.WriteString("\n" + string(bt))
+		}
+
+		if err != nil {
+			return
+		}
+
+		/*
+			_, err = file.Write(delim)
+			if err != nil {
+				return
+			}
+		*/
+	}
+
+	for _, sub := range c.subcommands {
+		_, err = file.WriteString("\n# ------------ SUBCOMMAND " + sub.subName() + " ------------\n#")
+		if err != nil {
+			return
+		}
+		sub.writeConfigValues(file)
+	}
+	return
 }

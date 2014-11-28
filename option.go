@@ -133,6 +133,9 @@ type Option struct {
 // If it does, nil is returned, otherwise
 // ErrInvalidDefault is returned or a json unmarshalling error if the type is json
 func (c Option) ValidateDefault() error {
+	if c.Default == nil {
+		return nil
+	}
 	err := c.ValidateValue(c.Default)
 	if err != nil {
 		return InvalidDefault{c.Name, c.Type, c.Default}
