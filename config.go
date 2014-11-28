@@ -72,13 +72,13 @@ func MustNew(app string, version string) *Config {
 
 func (c *Config) EachSpec(fn func(name string, opt *Option)) {
 	for k, opt := range c.spec {
-	    fn(k,opt)
+		fn(k, opt)
 	}
 }
 
 func (c *Config) EachValue(fn func(name string, val interface{})) {
 	for k, val := range c.values {
-	    fn(k,val)
+		fn(k, val)
 	}
 }
 
