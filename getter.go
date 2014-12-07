@@ -65,7 +65,7 @@ func (b *DateTimeGetter) IsSet() bool {
 	return b.cfg.IsSet(b.opt.Name)
 }
 
-func (b *DateTimeGetter) Get() *time.Time {
+func (b *DateTimeGetter) Get() time.Time {
 	return b.cfg.GetTime(b.opt.Name)
 }
 

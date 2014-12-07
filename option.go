@@ -6,63 +6,63 @@ import (
 )
 
 // shortcut for MustNewOption of type bool
-func (c *Config) NewBool(name, helpText string, setter ...func(*Option)) *BoolGetter {
-	return &BoolGetter{
-		opt: c.MustNewOption(name, "bool", helpText, setter),
+func (c *Config) NewBool(name, helpText string, opts ...func(*Option)) BoolGetter {
+	return BoolGetter{
+		opt: c.MustNewOption(name, "bool", helpText, opts),
 		cfg: c,
 	}
 }
 
 // shortcut for MustNewOption of type int32
-func (c *Config) NewInt32(name, helpText string, setter ...func(*Option)) *Int32Getter {
-	return &Int32Getter{
-		opt: c.MustNewOption(name, "int32", helpText, setter),
+func (c *Config) NewInt32(name, helpText string, opts ...func(*Option)) Int32Getter {
+	return Int32Getter{
+		opt: c.MustNewOption(name, "int32", helpText, opts),
 		cfg: c,
 	}
 }
 
 // shortcut for MustNewOption of type float32
-func (c *Config) NewFloat32(name, helpText string, setter ...func(*Option)) *Float32Getter {
-	return &Float32Getter{
-		opt: c.MustNewOption(name, "float32", helpText, setter),
+func (c *Config) NewFloat32(name, helpText string, opts ...func(*Option)) Float32Getter {
+	return Float32Getter{
+		opt: c.MustNewOption(name, "float32", helpText, opts),
 		cfg: c,
 	}
 }
 
 // shortcut for MustNewOption of type string
-func (c *Config) NewString(name, helpText string, setter ...func(*Option)) *StringGetter {
-	return &StringGetter{
-		opt: c.MustNewOption(name, "string", helpText, setter),
+func (c *Config) NewString(name, helpText string, opts ...func(*Option)) StringGetter {
+	return StringGetter{
+		opt: c.MustNewOption(name, "string", helpText, opts),
 		cfg: c,
 	}
 }
 
 // shortcut for MustNewOption of type datetime
-func (c *Config) NewDateTime(name, helpText string, setter ...func(*Option)) *DateTimeGetter {
-	return &DateTimeGetter{
-		opt: c.MustNewOption(name, "datetime", helpText, setter),
+func (c *Config) NewDateTime(name, helpText string, opts ...func(*Option)) DateTimeGetter {
+	return DateTimeGetter{
+		opt: c.MustNewOption(name, "datetime", helpText, opts),
 		cfg: c,
 	}
 }
 
-func (c *Config) NewDate(name, helpText string, setter ...func(*Option)) *DateTimeGetter {
-	return &DateTimeGetter{
-		opt: c.MustNewOption(name, "date", helpText, setter),
+func (c *Config) NewDate(name, helpText string, opts ...func(*Option)) DateTimeGetter {
+	return DateTimeGetter{
+		opt: c.MustNewOption(name, "date", helpText, opts),
 		cfg: c,
 	}
 }
 
-func (c *Config) NewTime(name, helpText string, setter ...func(*Option)) *DateTimeGetter {
-	return &DateTimeGetter{
-		opt: c.MustNewOption(name, "time", helpText, setter),
+func (c *Config) NewTime(name, helpText string, opts ...func(*Option)) DateTimeGetter {
+	return DateTimeGetter{
+		opt: c.MustNewOption(name, "time", helpText, opts),
 		cfg: c,
 	}
 }
 
 // shortcut for MustNewOption of type json
-func (c *Config) NewJSON(name, helpText string, setter ...func(*Option)) *JSONGetter {
-	return &JSONGetter{
-		opt: c.MustNewOption(name, "json", helpText, setter),
+func (c *Config) NewJSON(name, helpText string, opts ...func(*Option)) JSONGetter {
+	return JSONGetter{
+		opt: c.MustNewOption(name, "json", helpText, opts),
 		cfg: c,
 	}
 }
@@ -78,8 +78,8 @@ func Shortflag(s rune) func(*Option) {
 }
 
 // panics for invalid values
-func (c *Config) MustNewOption(name, type_, helpText string, setter []func(*Option)) *Option {
-	o, err := c.NewOption(name, type_, helpText, setter)
+func (c *Config) MustNewOption(name, type_, helpText string, opts []func(*Option)) *Option {
+	o, err := c.NewOption(name, type_, helpText, opts)
 	if err != nil {
 		panic(err)
 	}
@@ -87,10 +87,10 @@ func (c *Config) MustNewOption(name, type_, helpText string, setter []func(*Opti
 }
 
 // adds a new option
-func (c *Config) NewOption(name, type_, helpText string, setter []func(*Option)) (*Option, error) {
+func (c *Config) NewOption(name, type_, helpText string, opts []func(*Option)) (*Option, error) {
 	o := &Option{Name: name, Type: type_, Help: helpText}
 
-	for _, s := range setter {
+	for _, s := range opts {
 		s(o)
 	}
 

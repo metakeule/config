@@ -168,7 +168,7 @@ func TestConfig(t *testing.T) {
 
 	err := withTempConfig(func() {
 		for _, test := range tests {
-			cfg := MustNew("testapp", "0.1")
+			cfg := MustNew("testapp", "0.1", "a testapp")
 			setters := []func(*Option){}
 
 			if test.Default != nil {
@@ -192,7 +192,7 @@ func TestConfig(t *testing.T) {
 				}
 			}
 
-			if err := SaveToGlobals(cfg); err != nil {
+			if err := cfg.SaveToGlobals(); err != nil {
 				t.Fatal(err)
 			}
 
@@ -204,7 +204,7 @@ func TestConfig(t *testing.T) {
 				}
 			}
 
-			if err := SaveToUser(cfg); err != nil {
+			if err := cfg.SaveToUser(); err != nil {
 				t.Fatal(err)
 			}
 
@@ -216,7 +216,7 @@ func TestConfig(t *testing.T) {
 				}
 			}
 
-			if err := SaveToLocal(cfg); err != nil {
+			if err := cfg.SaveToLocal(); err != nil {
 				t.Fatal(err)
 			}
 
@@ -234,7 +234,7 @@ func TestConfig(t *testing.T) {
 				ARGS = []string{}
 			}
 
-			if err := Load(cfg, "test app", true); err != nil {
+			if err := cfg.Load(true); err != nil {
 				t.Fatal(err)
 			}
 

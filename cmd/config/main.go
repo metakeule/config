@@ -14,16 +14,16 @@ import (
 )
 
 var (
-	cfg               = config.MustNew("config", "0.0.1")
+	cfg               = config.MustNew("config", "0.0.1", "a multiplattform and multilanguage configuration tool")
 	optionCommand     = cfg.NewString("command", "the command where the options belong to", config.Required, config.Shortflag('c'))
 	optionLocations   = cfg.NewBool("locations", "the locations where the options are currently set", config.Shortflag('l'))
-	cfgSet            = cfg.MustSub("set")
+	cfgSet            = cfg.MustSub("set", "set an option")
 	optionSetKey      = cfgSet.NewString("option", "the option that should be set", config.Required, config.Shortflag('o'))
 	optionSetValue    = cfgSet.NewString("value", "the value the option should be set to", config.Required, config.Shortflag('v'))
 	optionSetPathType = cfgSet.NewString("type", "the type of the config path where the value should be set", config.Shortflag('p'), config.Required)
-	cfgGet            = cfg.MustSub("get")
+	cfgGet            = cfg.MustSub("get", "get the current value of an option")
 	optionGetKey      = cfgGet.NewString("option", "the option that should be get, if not set, all options that are set are returned", config.Shortflag('o'))
-	cfgPath           = cfg.MustSub("path")
+	cfgPath           = cfg.MustSub("path", "show the paths for the configuration files")
 	optionPathType    = cfgPath.NewString("type", "the type of the config path. valid values are global,user,local and all", config.Shortflag('p'), config.Default("all"))
 )
 
@@ -37,7 +37,7 @@ func GetVersion(cmdpath string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func GetSpec(cmdpath string, c *config.Config) error {
+func GetSpec(cmdpath string, c config.Config) error {
 	cmd := exec.Command(cmdpath, "--config-spec")
 	out, err := cmd.Output()
 	if err != nil {
@@ -46,34 +46,37 @@ func GetSpec(cmdpath string, c *config.Config) error {
 	return c.UnmarshalJSON(out)
 }
 
+func writeErr(err error) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
 func main() {
-	var cmdConfig *config.Config
+	var cmdConfig config.Config
 	var commandPath string
 	var cmd string
 
-	config.Run(cfg, "a multiplattform and multilanguage configuration tool", func(*config.Config) (err error) {
-		cmd = optionCommand.Get()
-		commandPath, err = exec.LookPath(cmd)
-		if err != nil {
-			return
-		}
-		var version string
-		version, err = GetVersion(commandPath)
-		if err != nil {
-			return
-		}
+	err := cfg.Run()
+	writeErr(err)
+	cmd = optionCommand.Get()
+	commandPath, err = exec.LookPath(cmd)
+	writeErr(err)
+	var version string
+	version, err = GetVersion(commandPath)
+	writeErr(err)
 
-		cmdConfig, err = config.New(cmd, version)
-		if err != nil {
-			return
-		}
-		return GetSpec(commandPath, cmdConfig)
-	})
+	cmdConfig, err = config.New(cmd, version, "")
+	writeErr(err)
+	err = GetSpec(commandPath, cmdConfig)
+	writeErr(err)
 
-	switch cfg.CurrentSub() {
-	case nil:
+	sub, hasSub := cfg.CurrentSub()
+
+	if !hasSub {
 		if optionLocations.IsSet() {
-			err := config.Load(cmdConfig, "", false)
+			err := cmdConfig.Load(false)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Can't load options for command %s: %s", cmd, err.Error())
 				os.Exit(1)
@@ -94,9 +97,14 @@ func main() {
 			fmt.Fprintln(os.Stdout, string(b))
 			os.Exit(0)
 		}
-		// fmt.Println("no subcommand")
-	case cfgGet:
-		err := config.Load(cmdConfig, "", false)
+		return
+	}
+
+	switch sub.SubName() {
+
+	// fmt.Println("no subcommand")
+	case cfgGet.SubName():
+		err := cmdConfig.Load(false)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Can't load config options for command %s: %s", cmd, err.Error())
 			os.Exit(1)
@@ -127,47 +135,47 @@ func main() {
 			fmt.Fprintf(os.Stdout, "%v\n", val)
 		}
 
-	case cfgSet:
+	case cfgSet.SubName():
 		key := optionSetKey.Get()
 		val := optionSetValue.Get()
 		ty := optionSetPathType.Get()
 		switch ty {
 		case "user":
-			if err := config.LoadUser(cmdConfig); err != nil {
+			if err := cmdConfig.LoadUser(); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't load user config file: %s", err.Error())
 				os.Exit(1)
 			}
-			if err := cmdConfig.Set(key, val, config.UserFile(cmdConfig)); err != nil {
+			if err := cmdConfig.Set(key, val, cmdConfig.UserFile()); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't set option %#v to value %#v: %s", key, val, err.Error())
 				os.Exit(1)
 			}
-			if err := config.SaveToUser(cmdConfig); err != nil {
+			if err := cmdConfig.SaveToUser(); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't save user config file: %s", err.Error())
 				os.Exit(1)
 			}
 		case "local":
-			if err := config.LoadLocals(cmdConfig); err != nil {
+			if err := cmdConfig.LoadLocals(); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't load local config file: %s", err.Error())
 				os.Exit(1)
 			}
-			if err := cmdConfig.Set(key, val, config.LocalFile(cmdConfig)); err != nil {
+			if err := cmdConfig.Set(key, val, cmdConfig.LocalFile()); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't set option %#v to value %#v: %s", key, val, err.Error())
 				os.Exit(1)
 			}
-			if err := config.SaveToLocal(cmdConfig); err != nil {
+			if err := cmdConfig.SaveToLocal(); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't save local config file: %s", err.Error())
 				os.Exit(1)
 			}
 		case "global":
-			if err := config.LoadGlobals(cmdConfig); err != nil {
+			if err := cmdConfig.LoadGlobals(); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't load global config file: %s", err.Error())
 				os.Exit(1)
 			}
-			if err := cmdConfig.Set(key, val, config.FirstGlobalsFile(cmdConfig)); err != nil {
+			if err := cmdConfig.Set(key, val, cmdConfig.FirstGlobalsFile()); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't set option %#v to value %#v: %s", key, val, err.Error())
 				os.Exit(1)
 			}
-			if err := config.SaveToGlobals(cmdConfig); err != nil {
+			if err := cmdConfig.SaveToGlobals(); err != nil {
 				fmt.Fprintf(os.Stderr, "Can't save global config file: %s", err.Error())
 				os.Exit(1)
 			}
@@ -176,23 +184,23 @@ func main() {
 			os.Exit(1)
 
 		}
-	case cfgPath:
+	case cfgPath.SubName():
 		ty := optionPathType.Get()
 		switch ty {
 		case "user":
-			fmt.Fprintln(os.Stdout, config.UserFile(cmdConfig))
+			fmt.Fprintln(os.Stdout, cmdConfig.UserFile())
 			os.Exit(0)
 		case "local":
-			fmt.Fprintln(os.Stdout, config.LocalFile(cmdConfig))
+			fmt.Fprintln(os.Stdout, cmdConfig.LocalFile())
 			os.Exit(0)
 		case "global":
-			fmt.Fprintln(os.Stdout, config.FirstGlobalsFile(cmdConfig))
+			fmt.Fprintln(os.Stdout, cmdConfig.FirstGlobalsFile())
 			os.Exit(0)
 		case "all":
 			paths := map[string]string{
-				"user":   config.UserFile(cmdConfig),
-				"local":  config.LocalFile(cmdConfig),
-				"global": config.FirstGlobalsFile(cmdConfig),
+				"user":   cmdConfig.UserFile(),
+				"local":  cmdConfig.LocalFile(),
+				"global": cmdConfig.FirstGlobalsFile(),
 			}
 			b, err := json.Marshal(paths)
 			if err != nil {

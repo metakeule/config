@@ -17,12 +17,14 @@ import (
 )
 
 /*
+TODO improve output and help text for subcommands, list subcommands in main help, output specfic intro for subcommand
 TODO make more tests
 TODO make cmdline utility
 TODO improve documentation
 */
 
 type Config struct {
+	helpIntro string
 	app       string
 	version   string
 	spec      map[string]*Option
@@ -39,31 +41,31 @@ type Config struct {
 // the following regular expressions:
 // app => NameRegExp
 // version => VersionRegexp
-func New(app string, version string) (*Config, error) {
+func New(app string, version string, helpIntro string) (c Config, err error) {
 
-	if err := ValidateName(app); err != nil {
-		return nil, ErrInvalidAppName(app)
+	if err = ValidateName(app); err != nil {
+		err = ErrInvalidAppName(app)
+		return
 	}
 
-	if err := ValidateVersion(version); err != nil {
-		return nil, err
+	if err = ValidateVersion(version); err != nil {
+		return
 	}
 
-	c := &Config{
-		spec:        map[string]*Option{},
-		subcommands: map[string]*Config{},
-		app:         app,
-		version:     version,
-		shortflags:  map[string]string{},
-	}
+	c.spec = map[string]*Option{}
+	c.subcommands = map[string]*Config{}
+	c.app = app
+	c.version = version
+	c.shortflags = map[string]string{}
+	c.helpIntro = helpIntro
 
 	c.Reset()
-	return c, nil
+	return
 }
 
 // MustNew calls New() and panics on errors
-func MustNew(app string, version string) *Config {
-	c, err := New(app, version)
+func MustNew(app string, version string, helpIntro string) Config {
+	c, err := New(app, version, helpIntro)
 	if err != nil {
 		panic(err)
 	}
@@ -83,8 +85,8 @@ func (c *Config) EachValue(fn func(name string, val interface{})) {
 }
 
 // MustSub calls Sub() and panics on errors
-func (c *Config) MustSub(name string) *Config {
-	s, err := c.Sub(name)
+func (c *Config) MustSub(name string, helpIntro string) Config {
+	s, err := c.Sub(name, helpIntro)
 	if err != nil {
 		panic(err)
 	}
@@ -93,17 +95,18 @@ func (c *Config) MustSub(name string) *Config {
 
 // Sub returns a *Config for a subcommand.
 // If name does not match to NameRegExp, an error is returned
-func (c *Config) Sub(name string) (*Config, error) {
+func (c *Config) Sub(name string, helpIntro string) (s Config, err error) {
 	if c.isSub() {
-		return nil, ErrSubSubCommand
+		err = ErrSubSubCommand
+		return
 	}
-	s, err := New(name, c.version)
+	s, err = New(name, c.version, helpIntro)
 	if err != nil {
-		return nil, err
+		return
 	}
 
 	s.app = c.app + "_" + s.app
-	c.subcommands[name] = s
+	c.subcommands[name] = &s
 
 	return s, nil
 }
@@ -248,9 +251,13 @@ func (c *Config) ValidateValues() error {
 	return nil
 }
 
-// CurrentSub returns the current subcommand. It returns nil, if there is no current sub.
-func (c *Config) CurrentSub() *Config {
-	return c.currentSub
+// CurrentSub returns the current subcommand and returns if a subcommand exists
+func (c *Config) CurrentSub() (s Config, exists bool) {
+	if c.currentSub == nil {
+		return
+	}
+	exists, s = true, *c.currentSub
+	return
 }
 
 // isSub checks if the *Config relongs to a subcommand
@@ -274,6 +281,10 @@ func (c *Config) appName() string {
 		return c.app[:strings.Index(c.app, "_")]
 	}
 	return c.app
+}
+
+func (c *Config) SubName() string {
+	return c.subName()
 }
 
 // subName returns the name of the subcommand and the empty string, if there is no subcommand, the empty string is returned
@@ -451,17 +462,17 @@ func (c *Config) MergeEnv() error {
 // exiting the program. also if --config_spec is set the spec is directly written to the
 // StdOut and the program is exiting. If --help is set, the help message is printed with the
 // the help  messages for the config options. If --version is set, the version of the running app is returned
-func (c *Config) MergeArgs(helpIntro string) error {
-	_, err := c.mergeArgs(helpIntro, false, ARGS)
+func (c *Config) MergeArgs() error {
+	_, err := c.mergeArgs(false, ARGS)
 	return err
 }
 
-func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) (merged map[string]bool, err error) {
+func (c *Config) mergeArgs(ignoreUnknown bool, args []string) (merged map[string]bool, err error) {
 	merged = map[string]bool{}
 	// prevent duplicates
 	keys := map[string]bool{}
 	// fmt.Printf("args: %#v\n", os.Args[1:])
-	for _, pair := range args {
+	for i, pair := range args {
 		wrapErr := func(err error) error {
 			return InvalidConfigFlag{c.version, pair, err}
 		}
@@ -512,9 +523,9 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 				User   string `json:"user,omitempty"`
 				Local  string `json:"local,omitempty"`
 			}{
-				FirstGlobalsFile(c),
-				UserFile(c),
-				LocalFile(c),
+				c.FirstGlobalsFile(),
+				c.UserFile(),
+				c.LocalFile(),
 			}
 			var bt []byte
 			bt, err = json.Marshal(cfgFiles)
@@ -528,13 +539,49 @@ func (c *Config) mergeArgs(helpIntro string, ignoreUnknown bool, args []string) 
 			fmt.Fprintf(os.Stdout, "%s\n", c.version)
 			os.Exit(0)
 		case "help":
-			fmt.Fprintf(os.Stdout, "%s\n", helpIntro)
+			if i+1 < len(args) {
+				subc := args[i+1]
+				sub, has := c.subcommands[subc]
+				if !has {
+					err = wrapErr(fmt.Errorf("unknown subcommand: %#v\n", subc))
+					return
+				}
+				fmt.Fprintf(os.Stdout, "%s\n", sub.helpIntro)
+
+				for k, spec := range sub.spec {
+					k = keyToArg(k)
+					fmt.Fprintf(
+						os.Stdout, "%s\n\t%s\n",
+						k, strings.Join(strings.Split(spec.Help, "\n"), "\n\t"),
+					)
+				}
+				os.Exit(0)
+			}
+			fmt.Fprintf(os.Stdout, "%s\n", c.helpIntro)
+
+			if len(c.subcommands) > 0 {
+				fmt.Fprintf(
+					os.Stdout, "sub commands:\n\n",
+				)
+			}
+			for name, sub := range c.subcommands {
+				fmt.Fprintf(
+					os.Stdout, "\t%s\n\t\t%s\n",
+					name, strings.Join(strings.Split(sub.helpIntro, "\n"), "\n\t\t"),
+				)
+			}
+
+			if len(c.spec) > 0 {
+				fmt.Fprintf(
+					os.Stdout, "arguments:\n\n",
+				)
+			}
 
 			for k, spec := range c.spec {
 				k = keyToArg(k)
 				fmt.Fprintf(
-					os.Stdout, "%s\n\t%s\n",
-					k, strings.Join(strings.Split(spec.Help, "\n"), "\n\t"),
+					os.Stdout, "\t%s\n\t\t%s\n",
+					k, strings.Join(strings.Split(spec.Help, "\n"), "\n\t\t"),
 				)
 			}
 			os.Exit(0)
@@ -619,16 +666,15 @@ func (c Config) GetValue(option string) interface{} {
 }
 
 // GetTime returns the value of the option as time
-func (c Config) GetTime(option string) *time.Time {
+func (c Config) GetTime(option string) (t time.Time) {
 	if err := ValidateName(option); err != nil {
 		panic(InvalidNameError(option))
 	}
 	v, has := c.values[option]
 	if has {
-		val := v.(time.Time)
-		return &val
+		t = v.(time.Time)
 	}
-	return nil
+	return
 }
 
 // GetString returns the value of the option as string

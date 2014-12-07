@@ -7,27 +7,27 @@ import (
 	"strings"
 )
 
-func Load(c *Config, helpIntro string, withArgs bool) error {
+func (c *Config) Load(withArgs bool) error {
 	// clear old values
 	c.Reset()
 
 	// fmt.Printf("ARGS: %#v\n", ARGS)
 
 	// first load defaults
-	LoadDefaults(c)
+	c.LoadDefaults()
 
 	// then overwrite with globals, return any error
-	if err := LoadGlobals(c); err != nil {
+	if err := c.LoadGlobals(); err != nil {
 		return err
 	}
 
 	// then overwrite with user, return any error
-	if err := LoadUser(c); err != nil {
+	if err := c.LoadUser(); err != nil {
 		return err
 	}
 
 	// then overwrite with locals, return any error
-	if err := LoadLocals(c); err != nil {
+	if err := c.LoadLocals(); err != nil {
 		return err
 	}
 
@@ -49,20 +49,20 @@ func Load(c *Config, helpIntro string, withArgs bool) error {
 					ARGS = ARGS[1:]
 				}
 
-				LoadDefaults(sub)
+				sub.LoadDefaults()
 
 				// then overwrite with env, return any error
 				if err := sub.MergeEnv(); err != nil {
 					return err
 				}
 
-				merged1, err1 := c.mergeArgs(helpIntro, true, ARGS)
+				merged1, err1 := c.mergeArgs(true, ARGS)
 				if err1 != nil {
 					return err1
 				}
 
 				// then overwrite with args
-				merged2, err2 := sub.mergeArgs(helpIntro, true, ARGS)
+				merged2, err2 := sub.mergeArgs(true, ARGS)
 				if err2 != nil {
 					return err2
 				}
@@ -89,14 +89,14 @@ func Load(c *Config, helpIntro string, withArgs bool) error {
 	if withArgs {
 
 		// then overwrite with args
-		return c.MergeArgs(helpIntro)
+		return c.MergeArgs()
 	}
 	return nil
 }
 
 // LoadUser loads the user specific config file
-func LoadUser(c *Config) error {
-	err, found := LoadFile(c, UserFile(c))
+func (c *Config) LoadUser() error {
+	err, found := c.LoadFile(c.UserFile())
 	if found {
 		return err
 	}
@@ -104,9 +104,9 @@ func LoadUser(c *Config) error {
 }
 
 // LoadLocals merges config inside a .config subdir in the local directory
-func LoadLocals(c *Config) error {
+func (c *Config) LoadLocals() error {
 	// fmt.Println("loading locals from " + c.LocalFile())
-	err, found := LoadFile(c, LocalFile(c))
+	err, found := c.LoadFile(c.LocalFile())
 	if found {
 		return err
 	}
@@ -116,9 +116,9 @@ func LoadLocals(c *Config) error {
 // LoadGlobals loads the first config file for the app it could find inside
 // the GLOBAL_DIRS and returns an error if the config could not be merged properly
 // If no config file could be found, no error is returned.
-func LoadGlobals(c *Config) error {
+func (c *Config) LoadGlobals() error {
 	for _, dir := range splitGlobals() {
-		err, found := LoadFile(c, filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT))
+		err, found := c.LoadFile(filepath.Join(dir, c.appName(), c.appName()+CONFIG_EXT))
 		if found {
 			return err
 		}
@@ -126,7 +126,7 @@ func LoadGlobals(c *Config) error {
 	return nil
 }
 
-func LoadDefaults(c *Config) {
+func (c *Config) LoadDefaults() {
 	for k, spec := range c.spec {
 		if spec.Default != nil {
 			c.values[k] = spec.Default
@@ -139,7 +139,7 @@ func LoadDefaults(c *Config) {
 // If the file could not be opened (does not exist), no error is returned
 // TODO maybe an error should be returned, if the file exists, but could not be opened because
 // of missing access rights
-func LoadFile(c *Config, path string) (err error, found bool) {
+func (c *Config) LoadFile(path string) (err error, found bool) {
 	//fmt.Printf("before from slash: %#v\n",path)
 	path = filepath.FromSlash(path)
 	file, err0 := os.Open(path)
@@ -171,9 +171,6 @@ func LoadFile(c *Config, path string) (err error, found bool) {
 // exiting the program. also if --config_spec is set the spec is directly written to the
 // StdOut and the program is exiting. If --help is set, the help message is printed with the
 // the help  messages for the config options
-func Run(c *Config, helpIntro string, validator func(*Config) error) {
-	err2Stderr(Load(c, helpIntro, true))
-	if validator != nil {
-		err2Stderr(validator(c))
-	}
+func (c *Config) Run() error {
+	return c.Load(true)
 }
