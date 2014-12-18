@@ -14,13 +14,16 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"gopkg.in/metakeule/fmtdate.v1"
 )
 
 /*
-TODO improve output and help text for subcommands, list subcommands in main help, output specfic intro for subcommand
 TODO make more tests
-TODO make cmdline utility
+TODO improve cmdline utility
 TODO improve documentation
+maybe add subpackage to help getting args from the web, make this explicit
+maybe add subpackage to help getting configuration from etcd
 */
 
 type Config struct {
@@ -31,9 +34,60 @@ type Config struct {
 	values    map[string]interface{}
 	locations map[string][]string
 	// maps shortflag to option
-	shortflags  map[string]string
-	subcommands map[string]*Config
-	currentSub  *Config
+	shortflags    map[string]string
+	commands      map[string]*Config
+	activeCommand *Config
+}
+
+var leftWidth = 32
+var totalWidth = 80
+
+func pad(left string, right string) string {
+	var bf bytes.Buffer
+
+	numSpaces := leftWidth - len([]rune(left))
+	bf.WriteString(left)
+
+	for i := 0; i < numSpaces; i++ {
+		bf.WriteString(" ")
+	}
+
+	spaceRight := totalWidth - 1 - leftWidth
+	right = strings.Replace(right, "\n", " \n ", -1)
+	// fmt.Printf("%#v\n", right)
+	arr := strings.Split(right, " ")
+
+	spaceRightAvailable := spaceRight
+	for _, word := range arr {
+		w := strings.TrimSpace(word)
+		if w == "" && word != "\n" {
+			continue
+		}
+		// fmt.Printf("%#v\n", word)
+		// fmt.Printf(" w[0]: %#v \\n: %#v\n", w[0], '\n')
+		if len(w) > spaceRightAvailable || word == "\n" {
+			bf.WriteString("\n")
+			for i := 0; i < leftWidth; i++ {
+				bf.WriteString(" ")
+			}
+			spaceRightAvailable = spaceRight
+		}
+
+		bf.WriteString(w + " ")
+		spaceRightAvailable -= len(w) + 1
+	}
+
+	/*
+		for i, r := range right {
+			if i != 0 && i%spaceRight == 0 {
+				bf.WriteString("\n                           ")
+			}
+			bf.WriteRune(r)
+			// fmt.Printf("spaceRight: %v, i+1= %v\n", spaceRight, i+1)
+
+		}
+	*/
+	return bf.String()
 }
 
 // New creates a new *Config for the given app and version
@@ -41,7 +95,7 @@ type Config struct {
 // the following regular expressions:
 // app => NameRegExp
 // version => VersionRegexp
-func New(app string, version string, helpIntro string) (c Config, err error) {
+func New(app string, version string, helpIntro string) (c *Config, err error) {
 
 	if err = ValidateName(app); err != nil {
 		err = ErrInvalidAppName(app)
@@ -51,9 +105,9 @@ func New(app string, version string, helpIntro string) (c Config, err error) {
 	if err = ValidateVersion(version); err != nil {
 		return
 	}
-
+	c = &Config{}
 	c.spec = map[string]*Option{}
-	c.subcommands = map[string]*Config{}
+	c.commands = map[string]*Config{}
 	c.app = app
 	c.version = version
 	c.shortflags = map[string]string{}
@@ -64,7 +118,7 @@ func New(app string, version string, helpIntro string) (c Config, err error) {
 }
 
 // MustNew calls New() and panics on errors
-func MustNew(app string, version string, helpIntro string) Config {
+func MustNew(app string, version string, helpIntro string) *Config {
 	c, err := New(app, version, helpIntro)
 	if err != nil {
 		panic(err)
@@ -85,8 +139,8 @@ func (c *Config) EachValue(fn func(name string, val interface{})) {
 }
 
 // MustSub calls Sub() and panics on errors
-func (c *Config) MustSub(name string, helpIntro string) Config {
-	s, err := c.Sub(name, helpIntro)
+func (c *Config) MustCommand(name string, helpIntro string) *Config {
+	s, err := c.Command(name, helpIntro)
 	if err != nil {
 		panic(err)
 	}
@@ -95,9 +149,9 @@ func (c *Config) MustSub(name string, helpIntro string) Config {
 
 // Sub returns a *Config for a subcommand.
 // If name does not match to NameRegExp, an error is returned
-func (c *Config) Sub(name string, helpIntro string) (s Config, err error) {
-	if c.isSub() {
-		err = ErrSubSubCommand
+func (c *Config) Command(name string, helpIntro string) (s *Config, err error) {
+	if c.isCommand() {
+		err = ErrCommandCommand
 		return
 	}
 	s, err = New(name, c.version, helpIntro)
@@ -106,7 +160,7 @@ func (c *Config) Sub(name string, helpIntro string) (s Config, err error) {
 	}
 
 	s.app = c.app + "_" + s.app
-	c.subcommands[name] = &s
+	c.commands[name] = s
 
 	return s, nil
 }
@@ -134,7 +188,7 @@ func (c *Config) addOption(opt *Option) error {
 func (c *Config) Reset() {
 	c.values = map[string]interface{}{}
 	c.locations = map[string][]string{}
-	c.currentSub = nil
+	c.activeCommand = nil
 }
 
 // Location returns the locations where the option was set in the order of setting.
@@ -251,17 +305,13 @@ func (c *Config) ValidateValues() error {
 	return nil
 }
 
-// CurrentSub returns the current subcommand and returns if a subcommand exists
-func (c *Config) CurrentSub() (s Config, exists bool) {
-	if c.currentSub == nil {
-		return
-	}
-	exists, s = true, *c.currentSub
-	return
+// CurrentSub returns the active command
+func (c *Config) ActiveCommand() (s *Config) {
+	return c.activeCommand
 }
 
-// isSub checks if the *Config relongs to a subcommand
-func (c *Config) isSub() bool {
+// isCommand checks if the *Config relongs to a subcommand
+func (c *Config) isCommand() bool {
 	return !(strings.Index(c.app, "_") == -1)
 }
 
@@ -277,19 +327,19 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 
 // appName returns the name of the app
 func (c *Config) appName() string {
-	if c.isSub() {
+	if c.isCommand() {
 		return c.app[:strings.Index(c.app, "_")]
 	}
 	return c.app
 }
 
-func (c *Config) SubName() string {
-	return c.subName()
+func (c *Config) CommmandName() string {
+	return c.commandName()
 }
 
-// subName returns the name of the subcommand and the empty string, if there is no subcommand, the empty string is returned
-func (c *Config) subName() string {
-	if c.isSub() {
+// commandName returns the name of the subcommand and the empty string, if there is no subcommand, the empty string is returned
+func (c *Config) commandName() string {
+	if c.isCommand() {
 		return c.app[strings.Index(c.app, "_")+1:]
 	}
 	return ""
@@ -341,7 +391,7 @@ func (c *Config) Merge(rd io.Reader, location string) error {
 			err = c.set(key, val, location)
 		} else {
 			//fmt.Printf("setting %#v to %#v for subcommand %#v\n", key, val, subcommand)
-			sub, has := c.subcommands[subcommand]
+			sub, has := c.commands[subcommand]
 			if !has {
 				return errors.New("unknown subcommand " + subcommand)
 			} else {
@@ -452,6 +502,39 @@ func (c *Config) MergeEnv() error {
 	return nil
 }
 
+func convertOpttype(optType string) string {
+
+	switch optType {
+	case "bool":
+		return ""
+	case "int32":
+		return "<integer>"
+	case "float32":
+		return "<float>"
+	case "string":
+		return "''"
+	case "json":
+		return "<json>"
+	case "time":
+		return "<hh:mm:ss>"
+	case "datetime":
+		return "<YYYY-MM-DD hh:mm:ss>"
+	case "date":
+		return "<YYYY-MM-DD>"
+	}
+	panic("should not happend")
+	/*
+		"bool"
+		"int32"
+		"float32"
+		"string"
+		"datetime"
+		"date"
+		"time"
+		"json"
+	*/
+}
+
 // MergeArgs merges the os.Args into the config
 // args like --a-key='a val' will correspond to the config value
 // A_KEY=a val
@@ -465,6 +548,138 @@ func (c *Config) MergeEnv() error {
 func (c *Config) MergeArgs() error {
 	_, err := c.mergeArgs(false, ARGS)
 	return err
+}
+
+func (c *Config) usage() string {
+	/*
+			usage: git [--version] [--help] [-C <path>] [-c name=value]
+		           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
+		           [-p|--paginate|--no-pager] [--no-replace-objects] [--bare]
+		           [--git-dir=<path>] [--work-tree=<path>] [--namespace=<name>]
+		           <command> [<args>]
+	*/
+
+	if c.isCommand() {
+
+	}
+
+	var options, commands string
+
+	var optBf bytes.Buffer
+
+	for optName, opt := range c.spec {
+		optBf.WriteString("\n")
+
+		var left bytes.Buffer
+		if !opt.Required {
+			left.WriteString("[")
+		}
+
+		if opt.Shortflag != "" {
+			left.WriteString("-" + opt.Shortflag + ", ")
+		}
+		left.WriteString("--" + optName)
+
+		if opt.Default != nil {
+
+			switch opt.Type {
+			case "string":
+				left.WriteString(fmt.Sprintf("='%s'", opt.Default))
+			case "bool":
+				if opt.Default.(bool) {
+					left.WriteString("=true")
+				} else {
+					left.WriteString("=false")
+				}
+			case "json":
+				left.WriteString(fmt.Sprintf("='%s'", opt.Default))
+			case "time":
+				left.WriteString(fmt.Sprintf("='%s'", fmtdate.Format("hh:mm:ss", opt.Default.(time.Time))))
+			case "date":
+				left.WriteString(fmt.Sprintf("='%s'", fmtdate.Format("YYYY-MM-DD", opt.Default.(time.Time))))
+			case "datetime":
+				left.WriteString(fmt.Sprintf("='%s'", fmtdate.Format("YYYY-MM-DD hh:mm:ss", opt.Default.(time.Time))))
+			default:
+				left.WriteString(fmt.Sprintf("=%v", opt.Default))
+
+			}
+
+		} else {
+			if opt.Type != "bool" {
+				left.WriteString(fmt.Sprintf("=%s", convertOpttype(opt.Type)))
+			}
+		}
+
+		/*
+			if opt.Required {
+				left.WriteString(" (required)")
+			}
+		*/
+		if !opt.Required {
+			left.WriteString("]")
+		}
+
+		optBf.WriteString(pad("  "+left.String(), opt.Help))
+		//optBf.WriteString("\t\t" + strings.Join(strings.Split(opt.Help, "\n"), "\n\t\t"))
+	}
+
+	if !c.isCommand() {
+		generalOptions := map[string]string{
+			"version": "prints the current version of the program",
+			"help":    "prints the help",
+		}
+
+		for optname, opthelp := range generalOptions {
+			optBf.WriteString("\n" + pad("  --"+optname, opthelp))
+		}
+	}
+
+	options = optBf.String()
+	// var subcmdIntro string
+
+	// if len(c.subcommands) > 0 {
+
+	// subcmdIntro = fmt.Sprintf("\nor     %s <command> OPTION...", c.appName())
+
+	if c.isCommand() {
+		return fmt.Sprintf(`%s
+
+usage: 
+  %s %s OPTION...
+
+options:%s`, c.helpIntro, c.appName(), c.commandName(), options)
+	}
+
+	var subcBf bytes.Buffer
+	for subCname, subC := range c.commands {
+		// subcBf.WriteString("\n  " + subCname + "\t\t" + strings.Join(strings.Split(subC.helpIntro, "\n"), "\n\t\t\t"))
+		subcBf.WriteString(pad("  "+subCname, subC.helpIntro) + "\n")
+	}
+
+	// }
+
+	generalcommand := map[string]string{
+		"config-spec":      "prints the specification of the configurable options",
+		"config-locations": "prints the locations of current configuration",
+		"config-files":     "prints the locations of the config files",
+	}
+
+	for subCname, subHelp := range generalcommand {
+		subcBf.WriteString(pad("  "+subCname, subHelp) + "\n")
+	}
+
+	commands = "commands:\n" + subcBf.String() + "\nfor help on the options of a command, run " +
+		fmt.Sprintf("\n  %s help <command>", c.appName())
+
+	return fmt.Sprintf(`%s
+
+usage: 
+  %s <command> OPTION...
+
+general options:%s
+
+%s
+           	`, c.helpIntro, c.appName(), options, commands)
 }
 
 func (c *Config) mergeArgs(ignoreUnknown bool, args []string) (merged map[string]bool, err error) {
@@ -536,54 +751,60 @@ func (c *Config) mergeArgs(ignoreUnknown bool, args []string) (merged map[string
 			fmt.Fprintf(os.Stdout, "%s\n", bt)
 			os.Exit(0)
 		case "version":
-			fmt.Fprintf(os.Stdout, "%s\n", c.version)
+			fmt.Fprintf(os.Stdout, "%s version %s\n", c.appName(), c.version)
 			os.Exit(0)
 		case "help":
 			if i+1 < len(args) {
 				subc := args[i+1]
-				sub, has := c.subcommands[subc]
+				sub, has := c.commands[subc]
 				if !has {
 					err = wrapErr(fmt.Errorf("unknown subcommand: %#v\n", subc))
 					return
 				}
-				fmt.Fprintf(os.Stdout, "%s\n", sub.helpIntro)
 
-				for k, spec := range sub.spec {
-					k = keyToArg(k)
-					fmt.Fprintf(
-						os.Stdout, "%s\n\t%s\n",
-						k, strings.Join(strings.Split(spec.Help, "\n"), "\n\t"),
-					)
-				}
+				fmt.Fprintf(os.Stdout, "%s\n", sub.usage())
+				/*
+					fmt.Fprintf(os.Stdout, "%s\n", sub.helpIntro)
+
+					for k, spec := range sub.spec {
+						k = keyToArg(k)
+						fmt.Fprintf(
+							os.Stdout, "%s\n\t%s\n",
+							k, strings.Join(strings.Split(spec.Help, "\n"), "\n\t"),
+						)
+					}
+				*/
 				os.Exit(0)
 			}
-			fmt.Fprintf(os.Stdout, "%s\n", c.helpIntro)
+			//fmt.Fprintf(os.Stdout, "%s\n", c.helpIntro)
+			fmt.Fprintf(os.Stdout, "%s\n", c.usage())
+			/*
+				if len(c.subcommands) > 0 {
+					fmt.Fprintf(
+						os.Stdout, "sub commands:\n\n",
+					)
+				}
+				for name, sub := range c.subcommands {
+					fmt.Fprintf(
+						os.Stdout, "\t%s\n\t\t%s\n",
+						name, strings.Join(strings.Split(sub.helpIntro, "\n"), "\n\t\t"),
+					)
+				}
 
-			if len(c.subcommands) > 0 {
-				fmt.Fprintf(
-					os.Stdout, "sub commands:\n\n",
-				)
-			}
-			for name, sub := range c.subcommands {
-				fmt.Fprintf(
-					os.Stdout, "\t%s\n\t\t%s\n",
-					name, strings.Join(strings.Split(sub.helpIntro, "\n"), "\n\t\t"),
-				)
-			}
+				if len(c.spec) > 0 {
+					fmt.Fprintf(
+						os.Stdout, "arguments:\n\n",
+					)
+				}
 
-			if len(c.spec) > 0 {
-				fmt.Fprintf(
-					os.Stdout, "arguments:\n\n",
-				)
-			}
-
-			for k, spec := range c.spec {
-				k = keyToArg(k)
-				fmt.Fprintf(
-					os.Stdout, "\t%s\n\t\t%s\n",
-					k, strings.Join(strings.Split(spec.Help, "\n"), "\n\t\t"),
-				)
-			}
+				for k, spec := range c.spec {
+					k = keyToArg(k)
+					fmt.Fprintf(
+						os.Stdout, "\t%s\n\t\t%s\n",
+						k, strings.Join(strings.Split(spec.Help, "\n"), "\n\t\t"),
+					)
+				}
+			*/
 			os.Exit(0)
 		default:
 			if sh, has := c.shortflags[key]; has {
@@ -706,7 +927,7 @@ func (c Config) GetJSON(option string, val interface{}) error {
 // if an error happens
 // the given perm is only used to create new files.
 func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
-	if c.isSub() {
+	if c.isCommand() {
 		return errors.New("WriteConfigFile must not be called in sub command")
 	}
 	if errValid := c.ValidateValues(); errValid != nil {
@@ -825,8 +1046,8 @@ func (c *Config) writeConfigValues(file *os.File) (err error) {
 		}
 
 		writeKey := k
-		if c.isSub() {
-			writeKey = c.subName() + "_" + k
+		if c.isCommand() {
+			writeKey = c.commandName() + "_" + k
 		}
 
 		_, err = file.WriteString("\n# --- " + writeKey + " (" + c.spec[k].Type + ") ---\n#     " + strings.Join(helplines, "\n#     ") + "\n")
@@ -887,8 +1108,8 @@ func (c *Config) writeConfigValues(file *os.File) (err error) {
 		*/
 	}
 
-	for _, sub := range c.subcommands {
-		_, err = file.WriteString("\n# ------------ SUBCOMMAND " + sub.subName() + " ------------\n#")
+	for _, sub := range c.commands {
+		_, err = file.WriteString("\n# ------------ COMMAND " + sub.commandName() + " ------------\n#")
 		if err != nil {
 			return
 		}

@@ -40,9 +40,9 @@ func (c *Config) Load(withArgs bool) error {
 
 		if len(ARGS) > 0 {
 			// fmt.Println("we are in subcommand " + ARGS[0])
-			if sub, has := c.subcommands[strings.ToLower(ARGS[0])]; has {
+			if sub, has := c.commands[strings.ToLower(ARGS[0])]; has {
 				// fmt.Println("we are in subcommand " + ARGS[0])
-				c.currentSub = sub
+				c.activeCommand = sub
 				if len(ARGS) == 1 {
 					ARGS = []string{}
 				} else {

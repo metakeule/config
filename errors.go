@@ -9,7 +9,7 @@ var (
 	// ErrInvalidName      = errors.New("invalid name")
 	ErrInvalidVersion   = errors.New("invalid version")
 	ErrInvalidShortflag = errors.New("invalid shortflag")
-	ErrSubSubCommand    = errors.New("subsub commands not supported")
+	ErrCommandCommand   = errors.New("command of command is not supported")
 
 	//ErrInvalidDefault = errors.New("invalid default")
 	// ErrInvalidValue   = errors.New("invalid value")

@@ -14,16 +14,16 @@ import (
 )
 
 var (
-	cfg               = config.MustNew("config", "0.0.1", "a multiplattform and multilanguage configuration tool")
+	cfg               = config.MustNew("config", "1.0.0", "a multiplattform and multilanguage configuration tool")
 	optionCommand     = cfg.NewString("command", "the command where the options belong to", config.Required, config.Shortflag('c'))
 	optionLocations   = cfg.NewBool("locations", "the locations where the options are currently set", config.Shortflag('l'))
-	cfgSet            = cfg.MustSub("set", "set an option")
+	cfgSet            = cfg.MustCommand("set", "set an option")
 	optionSetKey      = cfgSet.NewString("option", "the option that should be set", config.Required, config.Shortflag('o'))
 	optionSetValue    = cfgSet.NewString("value", "the value the option should be set to", config.Required, config.Shortflag('v'))
 	optionSetPathType = cfgSet.NewString("type", "the type of the config path where the value should be set", config.Shortflag('p'), config.Required)
-	cfgGet            = cfg.MustSub("get", "get the current value of an option")
+	cfgGet            = cfg.MustCommand("get", "get the current value of an option")
 	optionGetKey      = cfgGet.NewString("option", "the option that should be get, if not set, all options that are set are returned", config.Shortflag('o'))
-	cfgPath           = cfg.MustSub("path", "show the paths for the configuration files")
+	cfgPath           = cfg.MustCommand("path", "show the paths for the configuration files")
 	optionPathType    = cfgPath.NewString("type", "the type of the config path. valid values are global,user,local and all", config.Shortflag('p'), config.Default("all"))
 )
 
@@ -37,7 +37,7 @@ func GetVersion(cmdpath string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func GetSpec(cmdpath string, c config.Config) error {
+func GetSpec(cmdpath string, c *config.Config) error {
 	cmd := exec.Command(cmdpath, "--config-spec")
 	out, err := cmd.Output()
 	if err != nil {
@@ -53,10 +53,37 @@ func writeErr(err error) {
 	}
 }
 
+func cmdPrintAll() error {
+	if optionLocations.IsSet() {
+		err := cmdConfig.Load(false)
+		if err != nil {
+			return fmt.Errorf("Can't load options for command %s: %s", cmd, err.Error())
+			// os.Exit(1)
+		}
+		locations := map[string][]string{}
+
+		cmdConfig.EachValue(func(name string, value interface{}) {
+			locations[name] = cmdConfig.Locations(name)
+		})
+
+		var b []byte
+		b, err = json.Marshal(locations)
+		if err != nil {
+			return fmt.Errorf("Can't print locations for command %s: %s", cmd, err.Error())
+			// os.Exit(1)
+		}
+
+		fmt.Fprintln(os.Stdout, string(b))
+		// os.Exit(0)
+	}
+	return nil
+}
+
+var cmdConfig *config.Config
+var commandPath string
+var cmd string
+
 func main() {
-	var cmdConfig config.Config
-	var commandPath string
-	var cmd string
 
 	err := cfg.Run()
 	writeErr(err)
@@ -72,38 +99,17 @@ func main() {
 	err = GetSpec(commandPath, cmdConfig)
 	writeErr(err)
 
-	sub, hasSub := cfg.CurrentSub()
+	command := cfg.ActiveCommand()
 
-	if !hasSub {
-		if optionLocations.IsSet() {
-			err := cmdConfig.Load(false)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Can't load options for command %s: %s", cmd, err.Error())
-				os.Exit(1)
-			}
-			locations := map[string][]string{}
-
-			cmdConfig.EachValue(func(name string, value interface{}) {
-				locations[name] = cmdConfig.Locations(name)
-			})
-
-			var b []byte
-			b, err = json.Marshal(locations)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Can't print locations for command %s: %s", cmd, err.Error())
-				os.Exit(1)
-			}
-
-			fmt.Fprintln(os.Stdout, string(b))
-			os.Exit(0)
-		}
+	if command == nil {
+		cmdPrintAll()
 		return
 	}
 
-	switch sub.SubName() {
+	switch command {
 
 	// fmt.Println("no subcommand")
-	case cfgGet.SubName():
+	case cfgGet:
 		err := cmdConfig.Load(false)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Can't load config options for command %s: %s", cmd, err.Error())
@@ -135,7 +141,7 @@ func main() {
 			fmt.Fprintf(os.Stdout, "%v\n", val)
 		}
 
-	case cfgSet.SubName():
+	case cfgSet:
 		key := optionSetKey.Get()
 		val := optionSetValue.Get()
 		ty := optionSetPathType.Get()
@@ -184,7 +190,7 @@ func main() {
 			os.Exit(1)
 
 		}
-	case cfgPath.SubName():
+	case cfgPath:
 		ty := optionPathType.Get()
 		switch ty {
 		case "user":

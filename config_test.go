@@ -168,7 +168,10 @@ func TestConfig(t *testing.T) {
 
 	err := withTempConfig(func() {
 		for _, test := range tests {
-			cfg := MustNew("testapp", "0.1", "a testapp")
+			cfg, er := New("testapp", "0.1", "a testapp")
+			if er != nil {
+				t.Errorf(er.Error())
+			}
 			setters := []func(*Option){}
 
 			if test.Default != nil {
