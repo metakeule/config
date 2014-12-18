@@ -10,7 +10,7 @@ import (
 	// "os"
 	"os/exec"
 
-	"github.com/metakeule/config"
+	"gopkg.in/metakeule/config.v1"
 )
 
 var (
