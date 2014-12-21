@@ -550,7 +550,7 @@ func (c *Config) MergeArgs() error {
 	return err
 }
 
-func (c *Config) usage() string {
+func (c *Config) Usage() string {
 	/*
 			usage: git [--version] [--help] [-C <path>] [-c name=value]
 		           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
@@ -762,7 +762,7 @@ func (c *Config) mergeArgs(ignoreUnknown bool, args []string) (merged map[string
 					return
 				}
 
-				fmt.Fprintf(os.Stdout, "%s\n", sub.usage())
+				fmt.Fprintf(os.Stdout, "%s\n", sub.Usage())
 				/*
 					fmt.Fprintf(os.Stdout, "%s\n", sub.helpIntro)
 
@@ -777,7 +777,7 @@ func (c *Config) mergeArgs(ignoreUnknown bool, args []string) (merged map[string
 				os.Exit(0)
 			}
 			//fmt.Fprintf(os.Stdout, "%s\n", c.helpIntro)
-			fmt.Fprintf(os.Stdout, "%s\n", c.usage())
+			fmt.Fprintf(os.Stdout, "%s\n", c.Usage())
 			/*
 				if len(c.subcommands) > 0 {
 					fmt.Fprintf(
