@@ -697,7 +697,12 @@ func (c *Config) Usage() string {
 		options = c.usageOptions(true, map[string]bool{}, map[string]bool{})
 
 	} else {
-		options = c.usageOptions(false, map[string]bool{}, map[string]bool{}) + c.parent.usageOptions(false, c.skippedOptions, c.relaxedOptions)
+		parentOpts := c.parent.usageOptions(false, c.skippedOptions, c.relaxedOptions)
+		if parentOpts != "" {
+			parentOpts = fmt.Sprintf("general options:%s", parentOpts)
+		}
+
+		options = c.usageOptions(false, map[string]bool{}, map[string]bool{}) + parentOpts
 	}
 	// var subcmdIntro string
 
@@ -706,6 +711,13 @@ func (c *Config) Usage() string {
 	// subcmdIntro = fmt.Sprintf("\nor     %s <command> OPTION...", c.appName())
 
 	if c.isCommand() {
+		if options == "" {
+			return fmt.Sprintf(`%s
+
+usage: 
+  %s %s
+`, c.helpIntro, c.appName(), c.commandName())
+		}
 		return fmt.Sprintf(`%s
 
 usage: 
