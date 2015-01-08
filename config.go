@@ -37,6 +37,11 @@ type Config struct {
 	shortflags    map[string]string
 	commands      map[string]*Config
 	activeCommand *Config
+
+	// only for subcommands
+	skippedOptions map[string]bool
+	relaxedOptions map[string]bool
+	parent         *Config
 }
 
 var leftWidth = 32
@@ -147,6 +152,33 @@ func (c *Config) MustCommand(name string, helpIntro string) *Config {
 	return s
 }
 
+// Skip skips the given option of the parent command and is chainable
+// It panics, if the given option is not a parent option of if the
+// current config is no subcommand
+func (c *Config) Skip(o *Option) *Config {
+	if !c.isCommand() {
+		panic("can only Skip in subcommands")
+	}
+	_, has := c.parent.spec[o.Name]
+	if !has {
+		panic("option " + o.Name + " is not a general option")
+	}
+	c.skippedOptions[o.Name] = true
+	return c
+}
+
+func (c *Config) Relax(o *Option) *Config {
+	if !c.isCommand() {
+		panic("can only Relax in subcommands")
+	}
+	_, has := c.parent.spec[o.Name]
+	if !has {
+		panic("option " + o.Name + " is not a general option")
+	}
+	c.relaxedOptions[o.Name] = true
+	return c
+}
+
 // Sub returns a *Config for a subcommand.
 // If name does not match to NameRegExp, an error is returned
 func (c *Config) Command(name string, helpIntro string) (s *Config, err error) {
@@ -158,8 +190,11 @@ func (c *Config) Command(name string, helpIntro string) (s *Config, err error) {
 	if err != nil {
 		return
 	}
+	s.skippedOptions = map[string]bool{}
+	s.relaxedOptions = map[string]bool{}
 
 	s.app = c.app + "_" + s.app
+	s.parent = c
 	c.commands[name] = s
 
 	return s, nil
@@ -275,8 +310,21 @@ func (c Config) IsSet(option string) bool {
 // CheckMissing checks if mandatory values are missing inside the values map
 // CheckMissing stops on the first error
 func (c *Config) CheckMissing() error {
+	empty := map[string]bool{}
+	return c.checkMissing(empty, empty)
+}
+
+// CheckMissing checks if mandatory values are missing inside the values map
+// CheckMissing stops on the first error
+func (c *Config) checkMissing(skippedOptions map[string]bool, relaxedOptions map[string]bool) error {
 	for k, spec := range c.spec {
 		if spec.Required && spec.Default == nil {
+			if _, has := skippedOptions[k]; has {
+				continue
+			}
+			if _, has := relaxedOptions[k]; has {
+				continue
+			}
 			if _, has := c.values[k]; !has {
 				return MissingOptionError{c.version, k}
 			}
@@ -546,32 +594,28 @@ func convertOpttype(optType string) string {
 // StdOut and the program is exiting. If --help is set, the help message is printed with the
 // the help  messages for the config options. If --version is set, the version of the running app is returned
 func (c *Config) MergeArgs() error {
-	_, err := c.mergeArgs(false, ARGS)
+	empty := map[string]bool{}
+	skipped := empty
+	relaxed := empty
+	if c.isCommand() {
+		skipped = c.skippedOptions
+		relaxed = c.relaxedOptions
+	}
+	_, err := c.mergeArgs(false, ARGS, skipped, relaxed)
 	return err
 }
 
-func (c *Config) Usage() string {
-	/*
-			usage: git [--version] [--help] [-C <path>] [-c name=value]
-		           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
-		           [-p|--paginate|--no-pager] [--no-replace-objects] [--bare]
-		           [--git-dir=<path>] [--work-tree=<path>] [--namespace=<name>]
-		           <command> [<args>]
-	*/
-
-	if c.isCommand() {
-
-	}
-
-	var options, commands string
-
+func (c *Config) usageOptions(addGeneral bool, skipped map[string]bool, relaxed map[string]bool) string {
 	var optBf bytes.Buffer
 
 	for optName, opt := range c.spec {
+		if _, has := skipped[optName]; has {
+			continue
+		}
 		optBf.WriteString("\n")
 
 		var left bytes.Buffer
-		if !opt.Required {
+		if _, has := relaxed[optName]; has || !opt.Required {
 			left.WriteString("[")
 		}
 
@@ -615,7 +659,7 @@ func (c *Config) Usage() string {
 				left.WriteString(" (required)")
 			}
 		*/
-		if !opt.Required {
+		if _, has := relaxed[optName]; has || !opt.Required {
 			left.WriteString("]")
 		}
 
@@ -623,7 +667,7 @@ func (c *Config) Usage() string {
 		//optBf.WriteString("\t\t" + strings.Join(strings.Split(opt.Help, "\n"), "\n\t\t"))
 	}
 
-	if !c.isCommand() {
+	if !c.isCommand() && addGeneral {
 		generalOptions := map[string]string{
 			"version": "prints the current version of the program",
 			"help":    "prints the help",
@@ -634,7 +678,27 @@ func (c *Config) Usage() string {
 		}
 	}
 
-	options = optBf.String()
+	return optBf.String()
+}
+
+func (c *Config) Usage() string {
+	/*
+			usage: git [--version] [--help] [-C <path>] [-c name=value]
+		           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
+		           [-p|--paginate|--no-pager] [--no-replace-objects] [--bare]
+		           [--git-dir=<path>] [--work-tree=<path>] [--namespace=<name>]
+		           <command> [<args>]
+	*/
+
+	var commands string
+	var options string
+
+	if !c.isCommand() {
+		options = c.usageOptions(true, map[string]bool{}, map[string]bool{})
+
+	} else {
+		options = c.usageOptions(false, map[string]bool{}, map[string]bool{}) + c.parent.usageOptions(false, c.skippedOptions, c.relaxedOptions)
+	}
 	// var subcmdIntro string
 
 	// if len(c.subcommands) > 0 {
@@ -682,7 +746,7 @@ general options:%s
            	`, c.helpIntro, c.appName(), options, commands)
 }
 
-func (c *Config) mergeArgs(ignoreUnknown bool, args []string) (merged map[string]bool, err error) {
+func (c *Config) mergeArgs(ignoreUnknown bool, args []string, skippedOptions map[string]bool, relaxedOptions map[string]bool) (merged map[string]bool, err error) {
 	merged = map[string]bool{}
 	// prevent duplicates
 	keys := map[string]bool{}
@@ -834,7 +898,7 @@ func (c *Config) mergeArgs(ignoreUnknown bool, args []string) (merged map[string
 	if err = c.ValidateValues(); err != nil {
 		return
 	}
-	err = c.CheckMissing()
+	err = c.checkMissing(skippedOptions, relaxedOptions)
 	return
 }
 
