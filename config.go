@@ -698,9 +698,6 @@ func (c *Config) Usage() string {
 
 	} else {
 		parentOpts := c.parent.usageOptions(false, c.skippedOptions, c.relaxedOptions)
-		if parentOpts != "" {
-			parentOpts = fmt.Sprintf("general options:%s", parentOpts)
-		}
 
 		options = c.usageOptions(false, map[string]bool{}, map[string]bool{}) + parentOpts
 	}
