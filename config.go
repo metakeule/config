@@ -155,27 +155,27 @@ func (c *Config) MustCommand(name string, helpIntro string) *Config {
 // Skip skips the given option of the parent command and is chainable
 // It panics, if the given option is not a parent option of if the
 // current config is no subcommand
-func (c *Config) Skip(o *Option) *Config {
+func (c *Config) Skip(option string) *Config {
 	if !c.isCommand() {
 		panic("can only Skip in subcommands")
 	}
-	_, has := c.parent.spec[o.Name]
+	_, has := c.parent.spec[option]
 	if !has {
-		panic("option " + o.Name + " is not a general option")
+		panic("option " + option + " is not a general option")
 	}
-	c.skippedOptions[o.Name] = true
+	c.skippedOptions[option] = true
 	return c
 }
 
-func (c *Config) Relax(o *Option) *Config {
+func (c *Config) Relax(option string) *Config {
 	if !c.isCommand() {
 		panic("can only Relax in subcommands")
 	}
-	_, has := c.parent.spec[o.Name]
+	_, has := c.parent.spec[option]
 	if !has {
-		panic("option " + o.Name + " is not a general option")
+		panic("option " + option + " is not a general option")
 	}
-	c.relaxedOptions[o.Name] = true
+	c.relaxedOptions[option] = true
 	return c
 }
 
