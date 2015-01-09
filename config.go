@@ -1008,15 +1008,17 @@ func (c *Config) WriteConfigFile(path string, perm os.FileMode) (err error) {
 	}
 	dir := filepath.FromSlash(filepath.Dir(path))
 	info, errDir := os.Stat(dir)
-	if errDir != nil {
+
+	if errDir == nil && !info.IsDir() {
+		return fmt.Errorf("%s is no directory", dir)
+	}
+
+	if os.IsNotExist(errDir) {
 		errDir = os.MkdirAll(dir, 0755)
-		if errDir != nil {
-			return errDir
-		}
-	} else {
-		if !info.IsDir() {
-			return fmt.Errorf("%s is no directory", dir)
-		}
+	}
+
+	if errDir != nil {
+		return errDir
 	}
 
 	path = filepath.FromSlash(path)
