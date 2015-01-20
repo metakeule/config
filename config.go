@@ -727,6 +727,7 @@ options:%s`, c.helpIntro, c.appName(), c.commandName(), options)
 	}
 
 	var cmdStr string
+	var generalStr string
 	var subcBf bytes.Buffer
 	for subCname, subC := range c.commands {
 		// subcBf.WriteString("\n  " + subCname + "\t\t" + strings.Join(strings.Split(subC.helpIntro, "\n"), "\n\t\t\t"))
@@ -750,6 +751,7 @@ options:%s`, c.helpIntro, c.appName(), c.commandName(), options)
 		commands = "commands:\n" + subcBf.String() + "\nfor help on the options of a command, run " +
 			fmt.Sprintf("\n  %s help <command>", c.appName())
 		cmdStr = " <command>"
+		generalStr = "general "
 	}
 
 	return fmt.Sprintf(`%s
@@ -757,10 +759,10 @@ options:%s`, c.helpIntro, c.appName(), c.commandName(), options)
 usage: 
   %s%s OPTION...
 
-general options:%s
+%soptions:%s
 
 %s
-           	`, c.helpIntro, c.appName(), cmdStr, options, commands)
+           	`, c.helpIntro, c.appName(), cmdStr, generalStr, options, commands)
 }
 
 func (c *Config) mergeArgs(ignoreUnknown bool, args []string, skippedOptions map[string]bool, relaxedOptions map[string]bool) (merged map[string]bool, err error) {
