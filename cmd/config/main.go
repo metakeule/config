@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	cfg               = config.MustNew("config", "1.6.13", "a multiplattform and multilanguage configuration tool")
+	cfg               = config.MustNew("config", "1.6.14", "a multiplattform and multilanguage configuration tool")
 	optionCommand     = cfg.NewString("command", "the command where the options belong to", config.Required, config.Shortflag('c'))
 	optionLocations   = cfg.NewBool("locations", "the locations where the options are currently set", config.Shortflag('l'))
 	cfgSet            = cfg.MustCommand("set", "set an option").Skip("locations")
@@ -45,7 +45,7 @@ func GetSpec(cmdpath string, c *config.Config) error {
 	cmd := exec.Command(cmdpath, "--config-spec")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("%s does not seem to be a valid config program", cmdpath)
+		return fmt.Errorf("%s does not seem to be a valid config program", cmdpath)
 		// return err
 	}
 	return c.UnmarshalJSON(out)
