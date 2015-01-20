@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	cfg               = config.MustNew("config", "1.7.4", "a multiplattform and multilanguage configuration tool")
+	cfg               = config.MustNew("config", "1.7.5", "a multiplattform and multilanguage configuration tool")
 	optionProgram     = cfg.NewString("program", "the program where the options belong to (must be a config compatible program)", config.Required, config.Shortflag('p'))
 	optionLocations   = cfg.NewBool("locations", "the locations where the options are currently set", config.Shortflag('l'))
 	cfgSet            = cfg.MustCommand("set", "set an option").Skip("locations")
@@ -55,6 +55,7 @@ func GetSpec(cmdpath string, c *config.Config) error {
 func writeErr(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		fmt.Fprintln(os.Stdout, " -> run 'config help' to get more help")
 		os.Exit(1)
 	}
 }
