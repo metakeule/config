@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	cfg               = config.MustNew("config", "1.6.10", "a multiplattform and multilanguage configuration tool")
+	cfg               = config.MustNew("config", "1.6.12", "a multiplattform and multilanguage configuration tool")
 	optionCommand     = cfg.NewString("command", "the command where the options belong to", config.Required, config.Shortflag('c'))
 	optionLocations   = cfg.NewBool("locations", "the locations where the options are currently set", config.Shortflag('l'))
 	cfgSet            = cfg.MustCommand("set", "set an option").Skip("locations")
