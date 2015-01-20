@@ -726,6 +726,7 @@ usage:
 options:%s`, c.helpIntro, c.appName(), c.commandName(), options)
 	}
 
+	var cmdStr, commands string
 	var subcBf bytes.Buffer
 	for subCname, subC := range c.commands {
 		// subcBf.WriteString("\n  " + subCname + "\t\t" + strings.Join(strings.Split(subC.helpIntro, "\n"), "\n\t\t\t"))
@@ -744,18 +745,22 @@ options:%s`, c.helpIntro, c.appName(), c.commandName(), options)
 			subcBf.WriteString(pad("  "+subCname, subHelp) + "\n")
 		}
 	*/
-	commands = "commands:\n" + subcBf.String() + "\nfor help on the options of a command, run " +
-		fmt.Sprintf("\n  %s help <command>", c.appName())
+	if len(c.commands) > 0 {
+
+		commands = "commands:\n" + subcBf.String() + "\nfor help on the options of a command, run " +
+			fmt.Sprintf("\n  %s help <command>", c.appName())
+		cmdStr = " <command>"
+	}
 
 	return fmt.Sprintf(`%s
 
 usage: 
-  %s <command> OPTION...
+  %s%s OPTION...
 
 general options:%s
 
 %s
-           	`, c.helpIntro, c.appName(), options, commands)
+           	`, c.helpIntro, c.appName(), cmdStr, options, commands)
 }
 
 func (c *Config) mergeArgs(ignoreUnknown bool, args []string, skippedOptions map[string]bool, relaxedOptions map[string]bool) (merged map[string]bool, err error) {
