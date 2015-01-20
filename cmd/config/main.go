@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	// "flag"
 	// "fmt"
@@ -14,7 +15,7 @@ import (
 )
 
 var (
-	cfg               = config.MustNew("config", "1.7.2", "a multiplattform and multilanguage configuration tool")
+	cfg               = config.MustNew("config", "1.7.3", "a multiplattform and multilanguage configuration tool")
 	optionProgram     = cfg.NewString("program", "the program where the options belong to (must be a config compatible program)", config.Required, config.Shortflag('p'))
 	optionLocations   = cfg.NewBool("locations", "the locations where the options are currently set", config.Shortflag('l'))
 	cfgSet            = cfg.MustCommand("set", "set an option").Skip("locations")
@@ -99,7 +100,7 @@ func main() {
 	version, err = GetVersion(commandPath)
 	writeErr(err)
 
-	cmdConfig, err = config.New(cmd, version, "")
+	cmdConfig, err = config.New(filepath.Base(cmd), version, "")
 	writeErr(err)
 	err = GetSpec(commandPath, cmdConfig)
 	writeErr(err)
@@ -137,7 +138,7 @@ func main() {
 		} else {
 			key := optionGetKey.Get()
 			if !cmdConfig.IsOption(key) {
-				fmt.Fprintf(os.Stderr, "unknown option %s", cmd, err.Error())
+				fmt.Fprintf(os.Stderr, "unknown option %s", key, err.Error())
 				os.Exit(1)
 			}
 
