@@ -669,8 +669,11 @@ func (c *Config) usageOptions(addGeneral bool, skipped map[string]bool, relaxed 
 
 	if !c.isCommand() && addGeneral {
 		generalOptions := map[string]string{
-			"version": "prints the current version of the program",
-			"help":    "prints the help",
+			"version":          "prints the current version of the program",
+			"help":             "prints the help",
+			"config-spec":      "prints the specification of the configurable options",
+			"config-locations": "prints the locations of current configuration",
+			"config-files":     "prints the locations of the config files",
 		}
 
 		for optname, opthelp := range generalOptions {
@@ -730,17 +733,17 @@ options:%s`, c.helpIntro, c.appName(), c.commandName(), options)
 	}
 
 	// }
+	/*
+		generalcommand := map[string]string{
+			"config-spec":      "prints the specification of the configurable options",
+			"config-locations": "prints the locations of current configuration",
+			"config-files":     "prints the locations of the config files",
+		}
 
-	generalcommand := map[string]string{
-		"config-spec":      "prints the specification of the configurable options",
-		"config-locations": "prints the locations of current configuration",
-		"config-files":     "prints the locations of the config files",
-	}
-
-	for subCname, subHelp := range generalcommand {
-		subcBf.WriteString(pad("  "+subCname, subHelp) + "\n")
-	}
-
+		for subCname, subHelp := range generalcommand {
+			subcBf.WriteString(pad("  "+subCname, subHelp) + "\n")
+		}
+	*/
 	commands = "commands:\n" + subcBf.String() + "\nfor help on the options of a command, run " +
 		fmt.Sprintf("\n  %s help <command>", c.appName())
 
