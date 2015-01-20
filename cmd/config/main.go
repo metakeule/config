@@ -31,7 +31,8 @@ func GetVersion(cmdpath string) (string, error) {
 	cmd := exec.Command(cmdpath, "--version")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", err
+		// return "", err
+		return "", fmt.Errorf("%s does not seem to be a valid config program", cmdpath)
 	}
 	// fmt.Printf("version: %#v\n", string(out))
 	v := strings.Split(strings.TrimSpace(string(out)), " ")
