@@ -726,7 +726,7 @@ usage:
 options:%s`, c.helpIntro, c.appName(), c.commandName(), options)
 	}
 
-	var cmdStr, commands string
+	var cmdStr string
 	var subcBf bytes.Buffer
 	for subCname, subC := range c.commands {
 		// subcBf.WriteString("\n  " + subCname + "\t\t" + strings.Join(strings.Split(subC.helpIntro, "\n"), "\n\t\t\t"))
