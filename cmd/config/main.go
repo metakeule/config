@@ -15,7 +15,7 @@ import (
 
 var (
 	cfg               = config.MustNew("config", "1.6.14", "a multiplattform and multilanguage configuration tool")
-	optionCommand     = cfg.NewString("command", "the command where the options belong to", config.Required, config.Shortflag('c'))
+	optionProgram     = cfg.NewString("program", "the program where the options belong to (must be a config compatible program)", config.Required, config.Shortflag('p'))
 	optionLocations   = cfg.NewBool("locations", "the locations where the options are currently set", config.Shortflag('l'))
 	cfgSet            = cfg.MustCommand("set", "set an option").Skip("locations")
 	optionSetKey      = cfgSet.NewString("option", "the option that should be set", config.Required, config.Shortflag('o'))
@@ -45,7 +45,7 @@ func GetSpec(cmdpath string, c *config.Config) error {
 	cmd := exec.Command(cmdpath, "--config-spec")
 	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("%s does not seem to be a valid config program", cmdpath)
+		return fmt.Errorf("%s does not seem to be compatible with config", cmdpath)
 		// return err
 	}
 	return c.UnmarshalJSON(out)
@@ -92,7 +92,7 @@ func main() {
 
 	err := cfg.Run()
 	writeErr(err)
-	cmd = optionCommand.Get()
+	cmd = optionProgram.Get()
 	commandPath, err = exec.LookPath(cmd)
 	writeErr(err)
 	var version string
@@ -117,7 +117,7 @@ func main() {
 	case cfgGet:
 		err := cmdConfig.Load(false)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Can't load config options for command %s: %s", cmd, err.Error())
+			fmt.Fprintf(os.Stderr, "Can't load config options for program %s: %s", cmd, err.Error())
 			os.Exit(1)
 		}
 		if !optionGetKey.IsSet() {
@@ -128,7 +128,7 @@ func main() {
 			var b []byte
 			b, err = json.Marshal(vals)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Can't print locations for command %s: %s", cmd, err.Error())
+				fmt.Fprintf(os.Stderr, "Can't print locations for program %s: %s", cmd, err.Error())
 				os.Exit(1)
 			}
 
@@ -215,7 +215,7 @@ func main() {
 			}
 			b, err := json.Marshal(paths)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Can't print locations for command %s: %s", cmd, err.Error())
+				fmt.Fprintf(os.Stderr, "Can't print locations for program %s: %s", cmd, err.Error())
 				os.Exit(1)
 			}
 
