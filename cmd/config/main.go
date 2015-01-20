@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	cfg               = config.MustNew("config", "1.7.3", "a multiplattform and multilanguage configuration tool")
+	cfg               = config.MustNew("config", "1.7.4", "a multiplattform and multilanguage configuration tool")
 	optionProgram     = cfg.NewString("program", "the program where the options belong to (must be a config compatible program)", config.Required, config.Shortflag('p'))
 	optionLocations   = cfg.NewBool("locations", "the locations where the options are currently set", config.Shortflag('l'))
 	cfgSet            = cfg.MustCommand("set", "set an option").Skip("locations")
@@ -138,7 +138,7 @@ func main() {
 		} else {
 			key := optionGetKey.Get()
 			if !cmdConfig.IsOption(key) {
-				fmt.Fprintf(os.Stderr, "unknown option %s", key, err.Error())
+				fmt.Fprintf(os.Stderr, "unknown option %s", key)
 				os.Exit(1)
 			}
 
