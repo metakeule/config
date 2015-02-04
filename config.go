@@ -768,10 +768,10 @@ usage:
 
 func (c *Config) env_var(optName string) string {
 	if c.isCommand() {
-		return strings.ToUpper(c.app + "_" + optName + "_CONFIG_" + o.Name)
+		return strings.ToUpper(c.app + "_" + c.commandName() + "_CONFIG_" + optName)
 	}
 
-	return strings.ToUpper(c.app + "_CONFIG_" + o.Name)
+	return strings.ToUpper(c.app + "_CONFIG_" + optName)
 }
 
 func (c *Config) envVars() []string {
