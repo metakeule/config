@@ -820,13 +820,11 @@ func (c *Config) mergeArgs(ignoreUnknown bool, args []string, skippedOptions map
 			for _, cmd := range c.commands {
 				all = append(all, cmd.envVars()...)
 			}
-			var bt []byte
-			bt, err = json.Marshal(all)
-			if err != nil {
-				err = wrapErr(fmt.Errorf("can't serialize config env to json: %#v\n", err.Error()))
-				return
+
+			for _, env := range all {
+				fmt.Fprintf(os.Stdout, "%s\n", env)
 			}
-			fmt.Fprintf(os.Stdout, "%s\n", bt)
+
 			os.Exit(0)
 
 		case "config-spec":
