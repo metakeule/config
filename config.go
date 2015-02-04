@@ -669,9 +669,9 @@ func (c *Config) usageOptions(addGeneral bool, skipped map[string]bool, relaxed 
 
 	if !c.isCommand() && addGeneral {
 		generalOptions := map[string]string{
-			"version": "prints the current version of the program",
-			"help":    "prints the help",
-			// "config-spec":      "prints the specification of the configurable options",
+			"version":          "prints the current version of the program",
+			"help":             "prints the help",
+			"config-spec":      "prints the specification of the configurable options",
 			"config-locations": "prints the locations of current configuration",
 			"config-files":     "prints the locations of the config files",
 		}
@@ -797,17 +797,17 @@ func (c *Config) mergeArgs(ignoreUnknown bool, args []string, skippedOptions map
 		// fmt.Println(argKey)
 
 		switch key {
-		/*
-			case "config-spec":
-				var bt []byte
-				bt, err = c.MarshalJSON()
-				if err != nil {
-					err = wrapErr(fmt.Errorf("can't serialize config spec to json: %#v\n", err.Error()))
-					return
-				}
-				fmt.Fprintf(os.Stdout, "%s\n", bt)
-				os.Exit(0)
-		*/
+
+		case "config-spec":
+			var bt []byte
+			bt, err = c.MarshalJSON()
+			if err != nil {
+				err = wrapErr(fmt.Errorf("can't serialize config spec to json: %#v\n", err.Error()))
+				return
+			}
+			fmt.Fprintf(os.Stdout, "%s\n", bt)
+			os.Exit(0)
+
 		case "config-locations":
 			var bt []byte
 			bt, err = json.Marshal(c.locations)
