@@ -768,7 +768,7 @@ usage:
 
 func (c *Config) env_var(optName string) string {
 	if c.isCommand() {
-		return strings.ToUpper(c.commandName() + "_CONFIG_" + optName)
+		return strings.ToUpper(c.app + "_CONFIG_" + optName)
 	}
 
 	return strings.ToUpper(c.app + "_CONFIG_" + optName)
