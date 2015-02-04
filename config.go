@@ -672,6 +672,7 @@ func (c *Config) usageOptions(addGeneral bool, skipped map[string]bool, relaxed 
 			"version":          "prints the current version of the program",
 			"help":             "prints the help",
 			"config-spec":      "prints the specification of the configurable options",
+			"config-env":       "prints the environmental variables of the configurable options",
 			"config-locations": "prints the locations of current configuration",
 			"config-files":     "prints the locations of the config files",
 		}
@@ -765,6 +766,22 @@ usage:
            	`, c.helpIntro, c.appName(), cmdStr, generalStr, options, commands)
 }
 
+func (c *Config) env_var(optName string) string {
+	if c.isCommand() {
+		return strings.ToUpper(c.app + "_" + optName + "_CONFIG_" + o.Name)
+	}
+
+	return strings.ToUpper(c.app + "_CONFIG_" + o.Name)
+}
+
+func (c *Config) envVars() []string {
+	v := []string{}
+	for k := range c.spec {
+		v = append(v, c.env_var(k))
+	}
+	return v
+}
+
 func (c *Config) mergeArgs(ignoreUnknown bool, args []string, skippedOptions map[string]bool, relaxedOptions map[string]bool) (merged map[string]bool, err error) {
 	merged = map[string]bool{}
 	// prevent duplicates
@@ -797,6 +814,20 @@ func (c *Config) mergeArgs(ignoreUnknown bool, args []string, skippedOptions map
 		// fmt.Println(argKey)
 
 		switch key {
+
+		case "config-env":
+			all := c.envVars()
+			for _, cmd := range c.commands {
+				all = append(all, cmd.envVars()...)
+			}
+			var bt []byte
+			bt, err = json.Marshal(all)
+			if err != nil {
+				err = wrapErr(fmt.Errorf("can't serialize config env to json: %#v\n", err.Error()))
+				return
+			}
+			fmt.Fprintf(os.Stdout, "%s\n", bt)
+			os.Exit(0)
 
 		case "config-spec":
 			var bt []byte
