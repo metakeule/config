@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/metakeule/fmtdate.v1"
+	"github.com/metakeule/fmtdate"
 )
 
 /*
@@ -142,6 +142,15 @@ func (c *Config) EachValue(fn func(name string, val interface{})) {
 		fn(k, val)
 	}
 }
+
+/*
+TODO
+create this function to allow an option to be the last argument that is passed
+(without dashes). Only one last argument per command is allowed
+func (c *Config) LastARGV(o *Option) {
+
+}
+*/
 
 // MustSub calls Sub() and panics on errors
 func (c *Config) MustCommand(name string, helpIntro string) *Config {

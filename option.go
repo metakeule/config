@@ -77,6 +77,14 @@ func Shortflag(s rune) func(*Option) {
 	return func(o *Option) { o.Shortflag = string(s) }
 }
 
+/*
+TODO
+create this function to allow handling of stdin
+func (c *Config) MustHandleStdIn(helpText string, opts []func(*Option)) *Option {
+
+}
+*/
+
 // panics for invalid values
 func (c *Config) MustNewOption(name, type_, helpText string, opts []func(*Option)) *Option {
 	o, err := c.NewOption(name, type_, helpText, opts)
