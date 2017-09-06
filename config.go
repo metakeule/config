@@ -687,7 +687,7 @@ func (c *Config) usageOptions(addGeneral bool, skipped map[string]bool, relaxed 
 		}
 
 		for optname, opthelp := range generalOptions {
-			optBf.WriteString("\n" + pad("  --"+optname, opthelp))
+			optBf.WriteString("\n" + pad("  [--"+optname+"]", opthelp))
 		}
 	}
 

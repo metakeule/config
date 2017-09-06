@@ -53,7 +53,7 @@ type MissingOptionError struct {
 }
 
 func (e MissingOptionError) Error() string {
-	return fmt.Sprintf("missing option %s is not allowed in version %s", e.Option, e.Version)
+	return fmt.Sprintf("required option --%s not set", e.Option)
 }
 
 type InvalidConfigEnv struct {
